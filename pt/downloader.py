@@ -53,7 +53,7 @@ class Downloader:
                     log.error("【PT】pt.pt_seeding_time 格式错误：%s" % str(e))
                     self.__seeding_time = None
             self.__pt_monitor_only = pt.get("pt_monitor_only")
-            self.seeding_trackers=pt.get('seeding_tracker_keywords')
+            self.seeding_trackers = pt.get('seeding_tracker_keywords')
 
     def add_pt_torrent(self, url, mtype=MediaType.MOVIE, is_paused=None, tag=None):
         """

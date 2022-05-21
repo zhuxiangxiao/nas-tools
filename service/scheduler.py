@@ -42,7 +42,12 @@ class Scheduler:
                                        'interval',
                                        seconds=AUTO_REMOVE_TORRENTS_INTERVAL)
                 log.info("【RUN】scheduler.autoremove_torrents启动...")
-
+            seeding_tracker_keywords = self.__pt.get('seeding_tracker_keywords')
+            if seeding_tracker_keywords:
+                self.SCHEDULER.add_job(AutoRemoveTorrents().run_remove_not_seed_schedule(),
+                                       'interval',
+                                       seconds=AUTO_REMOVE_TORRENTS_INTERVAL)
+                log.info("【RUN】scheduler.autoremove_not_seed_torrents启动...")
             # PT站签到
             ptsignin_cron = str(self.__pt.get('ptsignin_cron'))
             if ptsignin_cron:
