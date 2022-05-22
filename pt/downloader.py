@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from time import sleep
 
@@ -24,6 +25,7 @@ class Downloader:
     mediaserver = None
     filetransfer = None
     media = None
+    seeding_trackers = None
 
     def __init__(self):
         self.message = Message()
@@ -51,6 +53,7 @@ class Downloader:
                     log.error("【PT】pt.pt_seeding_time 格式错误：%s" % str(e))
                     self.__seeding_time = None
             self.__pt_monitor_only = pt.get("pt_monitor_only")
+            self.seeding_trackers = pt.get('seeding_tracker_keywords')
 
     def add_pt_torrent(self, url, mtype=MediaType.MOVIE, is_paused=None, tag=None):
         """
@@ -116,6 +119,21 @@ class Downloader:
         for torrent in torrents:
             self.delete_torrents(torrent)
         log.info("【PT】PT做种清理完成")
+    
+
+    def pt_remove_not_seed_torrents(self):
+        """
+        做种清理，清理非指定tracker的种子
+        """
+        if not self.client:
+            return False
+        if not self.seeding_trackers:
+            return True
+        log.info("【PT】开始清理非指定tracker的种子，指定的tracker关键词为:%s..." % json.dumps(self.seeding_trackers))
+        for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self.seeding_trackers):
+            self.delete_torrents(torrent)
+        log.info("【PT】PT做种清理完成")
+
 
     def pt_downloading_torrents(self):
         """

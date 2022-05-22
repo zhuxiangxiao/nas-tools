@@ -202,7 +202,15 @@ class Qbittorrent:
                 log.info("【PT】%s 做种时间：%s（秒），已达清理条件，进行清理..." % (torrent.get('name'), torrent.get('seeding_time')))
                 remove_torrents.append(torrent.get('hash'))
         return remove_torrents
-
+    
+    def get_completed_not_seed_torrents(self,seeding_trackers):
+        """
+        查询可以清单的种子
+        :param seeding_trackers: 做种白名单关键词
+        :return: 可以清理的种子ID列表
+        """
+        return []
+        
     def get_last_add_torrentid_by_tag(self, tag):
         """
         根据种子的下载链接获取下载中或暂停的钟子的ID
