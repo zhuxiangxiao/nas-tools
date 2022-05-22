@@ -14,6 +14,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 import log
 from message.channel.wechat import WeChat
+from rmt.doubanv2api.douban import Douban
 from service.sync import Sync
 from service.run import stop_monitor, restart_monitor
 from pt.client.qbittorrent import Qbittorrent
@@ -70,7 +71,7 @@ def create_flask_app(config):
     ADMIN_USERS = [{
         "id": 0,
         "name": admin_user,
-        "password": generate_password_hash(str(admin_password)),
+        "password": admin_password[6:],
         "pris": "我的媒体库,资源搜索,推荐,订阅管理,下载管理,媒体识别,服务,系统设置,搜索设置,订阅设置"
     }]
 
@@ -523,6 +524,8 @@ def create_flask_app(config):
             if RecommendType in ['hm', 'nm', 'ht', 'nt']:
                 image = "https://image.tmdb.org/t/p/original/%s" % image
             else:
+                # 替换图片分辨率
+                image = image.replace("s_ratio_poster", "m_ratio_poster")
                 image = "https://images.weserv.nl/?url=%s" % image
             vote = res.get('vote_average')
             overview = res.get('overview')
@@ -999,14 +1002,14 @@ def create_flask_app(config):
         return render_template("setting/users.html", Users=Users, UserCount=user_count)
 
     # 事件响应
-    @App.route('/do', methods=['POST', 'GET'])
+    @App.route('/do', methods=['POST'])
+    @login_required
     def do():
-        if request.method == "POST":
+        try:
             cmd = request.form.get("cmd")
             data = request.form.get("data")
-        else:
-            cmd = request.args.get("cmd")
-            data = request.args.get("data")
+        except Exception as e:
+            return {"code": -1, "msg": str(e)}
         if data:
             data = json.loads(data)
         if cmd:
@@ -1487,28 +1490,41 @@ def create_flask_app(config):
                 tmdb_info = Media().get_media_info_manual(media_type, title, year, tmdbid)
                 if not tmdb_info:
                     return {"code": 1, "retmsg": "无法查询到TMDB信息", "link_url": link_url}
+
+                overview = tmdb_info.get("overview")
+                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path')
                 if media_type == MediaType.MOVIE:
+                    if doubanid:
+                        douban_info = Douban().movie_detail(doubanid)
+                        overview = douban_info.get("intro")
+                        poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
+
                     return {
                         "code": 0,
                         "id": tmdb_info.get('id'),
                         "title": tmdb_info.get('title'),
                         "vote_average": tmdb_info.get("vote_average"),
-                        "poster_path": "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path'),
+                        "poster_path": poster_path,
                         "release_date": tmdb_info.get('release_date'),
                         "year": tmdb_info.get('release_date')[0:4] if tmdb_info.get('release_date') else "",
-                        "overview": tmdb_info.get("overview"),
+                        "overview": overview,
                         "link_url": link_url
                     }
                 else:
+                    if doubanid:
+                        douban_info = Douban().tv_detail(doubanid)
+                        overview = douban_info.get("intro")
+                        poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
+
                     return {
                         "code": 0,
                         "id": tmdb_info.get('id'),
                         "title": tmdb_info.get('name'),
                         "vote_average": tmdb_info.get("vote_average"),
-                        "poster_path": "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path'),
+                        "poster_path": poster_path,
                         "first_air_date": tmdb_info.get('first_air_date'),
                         "year": tmdb_info.get('first_air_date')[0:4] if tmdb_info.get('first_air_date') else "",
-                        "overview": tmdb_info.get("overview"),
+                        "overview": overview,
                         "link_url": link_url
                     }
 
@@ -1672,6 +1688,13 @@ def create_flask_app(config):
 
     # 根据Key设置配置值
     def set_config_value(cfg, cfg_key, cfg_value):
+        # 密码
+        if cfg_key == "app.login_password":
+            if cfg_value and not cfg_value.startswith("[hash]"):
+                cfg['app']['login_password'] = "[hash]%s" % generate_password_hash(cfg_value)
+            else:
+                cfg['app']['login_password'] = cfg_value or "password"
+            return cfg
         # 代理
         if cfg_key == "app.proxies":
             if cfg_value:

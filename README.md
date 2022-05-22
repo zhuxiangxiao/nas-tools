@@ -7,7 +7,7 @@ Docker：https://hub.docker.com/repository/docker/jxxghp/nas-tools
 
 群晖套件：https://github.com/jxxghp/nas-tools/releases
 
-TG交流：https://t.me/nastool_chat
+TG频道：https://t.me/nastool
 
 WIKI：https://github.com/jxxghp/nas-tools/wiki
 
@@ -173,7 +173,7 @@ https://github.com/jxxghp/nas-tools/releases
    >> 综艺
    >> 儿童
 
-### 4、配置目录同步（可选）
+### 4、配置同步目录（可选）
 * 目录同步可以对多个分散的文件夹进行监控，文件夹中有新增媒体文件时会自动进行识别重命名，并按配置的转移方式转移到媒体库目录或指定的目录中。如将PT下载软件的下载目录也纳入目录同步范围的，建议关闭下载软件监控功能，否则会触发重复处理。
 
 ### 5、配置微信菜单/Telegram机器人（推荐）
@@ -221,31 +221,14 @@ Jackett/Prowlarr二选一，但推荐使用Jackett，支持并发且支持副标
    ```
 * 群晖套件版本，ssh到后台运行以下命令，同样修改配置文件路径以及源目录、目的目录参数。
    ```
-   export NASTOOL_CONFIG=/volume1/homes/admin/.config/nastool/config.yaml
+   export NASTOOL_CONFIG=/volume1/NASTOOL/config.yaml
    /var/packages/py3k/target/usr/local/bin/python3 /var/packages/nastool/target/rmt/filetransfer.py -s /from/path -d /to/path
    ```
 * 本地直接运行的，cd 到程序根目录，执行以下命令，修改配置文件、源目录和目的目录参数。
    ```
-   export NASTOOL_CONFIG=/xxx/config/config.yaml
+   export NASTOOL_CONFIG=/xxx/config.yaml
    python3 rmt/filetransfer.py -s /from/path -d /to/path
    ```
-
-## 使用
-1) 3000 端口访问 WEB UI界面，可以修改配置、添加订阅、搜索资源以及启动服务
-
-![image](https://user-images.githubusercontent.com/51039935/163519714-ca2cb339-b5e2-423e-a9d8-b475e2cf9ba2.png)
-
-
-2) 手机端图文通知和服务控制
-
-![image](https://user-images.githubusercontent.com/51039935/163519064-7abad158-0768-450c-82d5-a6a4ae7ccf62.jpg)
-![image](https://user-images.githubusercontent.com/51039935/163519547-8aa2e845-6ffe-452b-909d-bf58f23fbb42.jpg)
-![image](https://user-images.githubusercontent.com/51039935/163519563-0d06c95f-7b31-43eb-a528-7cc5aa1155aa.jpg)
-
-
-3) 效果
-
-![image](https://user-images.githubusercontent.com/51039935/153886867-50a3debd-e982-4723-974b-04ba16f732b1.png)
 
 ## 鸣谢
 * 程序UI模板及图标来源于开源项目<a href="https://github.com/tabler/tabler">tabler</a>，此外项目中还使用到了开源模块：<a href="https://github.com/igorcmoura/anitopy" target="_blank">anitopy</a>、<a href="https://github.com/AnthonyBloomer/tmdbv3api" target="_blank">tmdbv3api</a>、<a href="https://github.com/pkkid/python-plexapi" target="_blank">python-plexapi</a>、<a href="https://github.com/rmartin16/qbittorrent-api">qbittorrent-api</a>、<a href="https://github.com/Trim21/transmission-rpc">transmission-rpc</a>等

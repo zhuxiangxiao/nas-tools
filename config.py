@@ -4,6 +4,7 @@ import shutil
 from collections import deque
 from threading import Lock
 import ruamel.yaml
+from werkzeug.security import generate_password_hash
 
 import log
 from utils.functions import singleton
@@ -38,8 +39,8 @@ SYNC_TRANSFER_INTERVAL = 300
 # RSS队列中处理时间间隔
 RSS_SEARCH_INTERVAL = 300
 # fanart的api，用于拉取封面图片
-FANART_MOVIE_API_URL = 'http://webservice.fanart.tv/v3/movies/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
-FANART_TV_API_URL = 'http://webservice.fanart.tv/v3/tv/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
+FANART_MOVIE_API_URL = 'https://webservice.fanart.tv/v3/movies/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
+FANART_TV_API_URL = 'https://webservice.fanart.tv/v3/tv/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
 # 日志级别
 LOG_LEVEL = logging.INFO
 # 定义一个列表用来保存最近的日志，以便查看
@@ -72,6 +73,11 @@ class Config(object):
                 try:
                     yaml = ruamel.yaml.YAML()
                     self.__config = yaml.load(f)
+                    if self.__config.get("app"):
+                        login_password = self.__config.get("app").get("login_password")
+                        if login_password and not login_password.startswith("[hash]"):
+                            self.__config['app']['login_password'] = "[hash]%s" % generate_password_hash(login_password)
+                            self.save_config(self.__config)
                 except Exception as e:
                     log.console("【ERROR】配置文件 config.yaml 格式出现严重错误！请检查：%s" % str(e))
                     self.__config = {}
