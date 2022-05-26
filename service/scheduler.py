@@ -40,6 +40,7 @@ class Scheduler:
                                        'interval',
                                        seconds=AUTO_REMOVE_TORRENTS_INTERVAL)
                 log.info("【RUN】PT下载自动删种服务启动...")
+            seeding_tracker_keywords = self.__pt.get('seeding_tracker_keywords')
             if seeding_tracker_keywords:
                 self.SCHEDULER.add_job(Downloader().pt_remove_not_seed_torrents,
                                        'interval',
