@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from threading import Lock
 from time import sleep
 
 import log
@@ -14,6 +15,8 @@ from pt.media_server import MediaServer
 from rmt.metainfo import MetaInfo
 from utils.functions import str_timelong
 from utils.types import MediaType, DownloaderType
+
+lock = Lock()
 
 
 class Downloader:
@@ -87,19 +90,23 @@ class Downloader:
         转移PT下载完成的文件，进行文件识别重命名到媒体库目录
         """
         if self.client:
-            log.info("【PT】开始转移文件...")
-            if self.__pt_monitor_only:
-                tag = PT_TAG
-            else:
-                tag = None
-            trans_tasks = self.client.get_transfer_task(tag=tag)
-            for task in trans_tasks:
-                done_flag, done_msg = self.filetransfer.transfer_media(in_from=self.__client_type,
-                                                                       in_path=task.get("path"))
-                if not done_flag:
-                    log.warn("【PT】%s 转移失败：%s" % (task.get("path"), done_msg))
-                self.client.set_torrents_status(task.get("id"))
-            log.info("【PT】文件转移结束")
+            try:
+                lock.acquire()
+                log.info("【PT】开始转移文件...")
+                if self.__pt_monitor_only:
+                    tag = PT_TAG
+                else:
+                    tag = None
+                trans_tasks = self.client.get_transfer_task(tag=tag)
+                for task in trans_tasks:
+                    done_flag, done_msg = self.filetransfer.transfer_media(in_from=self.__client_type,
+                                                                           in_path=task.get("path"))
+                    if not done_flag:
+                        log.warn("【PT】%s 转移失败：%s" % (task.get("path"), done_msg))
+                    self.client.set_torrents_status(task.get("id"))
+                log.info("【PT】文件转移结束")
+            finally:
+                lock.release()
 
     def pt_removetorrents(self):
         """
@@ -110,16 +117,19 @@ class Downloader:
         # 空或0不处理
         if not self.__seeding_time:
             return
-        if self.__pt_monitor_only:
-            tag = PT_TAG
-        else:
-            tag = None
-        log.info("【PT】开始执行PT做种清理，做种时间：%s..." % str_timelong(self.__seeding_time))
-        torrents = self.client.get_remove_torrents(seeding_time=self.__seeding_time, tag=tag)
-        for torrent in torrents:
-            self.delete_torrents(torrent)
-        log.info("【PT】PT做种清理完成")
-    
+        try:
+            lock.acquire()
+            if self.__pt_monitor_only:
+                tag = PT_TAG
+            else:
+                tag = None
+            log.info("【PT】开始执行PT做种清理，做种时间：%s..." % str_timelong(self.__seeding_time))
+            torrents = self.client.get_remove_torrents(seeding_time=self.__seeding_time, tag=tag)
+            for torrent in torrents:
+                self.delete_torrents(torrent)
+            log.info("【PT】PT做种清理完成")
+        finally:
+            lock.release()
 
     def pt_remove_not_seed_torrents(self):
         """
@@ -129,11 +139,14 @@ class Downloader:
             return False
         if not self.seeding_trackers:
             return True
-        log.info("【PT】开始清理非指定tracker的种子，指定的tracker关键词为:%s..." % json.dumps(self.seeding_trackers))
-        for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self.seeding_trackers):
-            self.delete_torrents(torrent)
-        log.info("【PT】PT做种清理完成")
-
+        try:
+            lock.acquire()
+            log.info("【PT】开始清理非指定tracker的种子，指定的tracker关键词为:%s..." % json.dumps(self.seeding_trackers))
+            for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self.seeding_trackers):
+                self.delete_torrents(torrent)
+            log.info("【PT】PT做种清理完成")
+        finally:
+            lock.release()
 
     def pt_downloading_torrents(self):
         """
@@ -187,6 +200,15 @@ class Downloader:
         if not self.client:
             return False
         return self.client.delete_torrents(delete_file=True, ids=ids)
+
+    def get_pt_data(self):
+        """
+        获取PT下载软件中当前上传和下载量
+        :return: 上传量、下载量
+        """
+        if not self.client:
+            return 0, 0
+        return self.client.get_pt_data()
 
     def check_and_add_pt(self, in_from, media_list, need_tvs=None):
         """
@@ -330,7 +352,7 @@ class Downloader:
                             # 设置任务只下载想要的文件
                             selected_episodes = self.set_files_status(torrent_id, need_episodes)
                             if not selected_episodes:
-                                log.error("【PT】种子 %s 没有需要的集，删除下载任务..." % item.org_string)
+                                log.info("【PT】种子 %s 没有需要的集，删除下载任务..." % item.org_string)
                                 self.client.delete_torrents(delete_file=True, ids=torrent_id)
                                 continue
                             else:

@@ -14,7 +14,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 import log
 from message.channel.wechat import WeChat
-from rmt.doubanv2api.douban import Douban
+from pt.douban import DouBan
+from pt.sites import Sites
+from rmt.doubanv2api.doubanapi import DoubanApi
 from service.sync import Sync
 from service.run import stop_monitor, restart_monitor
 from pt.client.qbittorrent import Qbittorrent
@@ -28,11 +30,6 @@ from pt.media_server import MediaServer
 from rmt.metainfo import MetaInfo
 from pt.mediaserver.jellyfin import Jellyfin
 from pt.mediaserver.plex import Plex
-from service.tasks.autoremove_torrents import AutoRemoveTorrents
-from service.tasks.douban_sync import DoubanSync
-from service.tasks.pt_signin import PTSignin
-from service.tasks.pt_transfer import PTTransfer
-from service.tasks.rss_download import RSSDownloader
 from message.send import Message
 from config import WECHAT_MENU, PT_TRANSFER_INTERVAL, LOG_QUEUE
 from service.run import stop_scheduler, restart_scheduler
@@ -44,7 +41,7 @@ from utils.sqls import get_search_result_by_id, get_search_results, \
     delete_transfer_log_by_id, get_config_site, insert_config_site, get_site_by_id, delete_config_site, \
     update_config_site, get_config_search_rule, update_config_search_rule, get_config_rss_rule, update_config_rss_rule, \
     get_unknown_path_by_id, get_rss_tvs, get_rss_movies, delete_rss_movie, delete_rss_tv, \
-    get_users, insert_user, delete_user, get_transfer_statistics, get_system_messages
+    get_users, insert_user, delete_user, get_transfer_statistics, get_system_messages, get_site_statistics
 from utils.types import MediaType, SearchType, DownloaderType, SyncType, OsType
 from version import APP_VERSION
 from web.backend.douban_hot import DoubanHot
@@ -55,7 +52,6 @@ from utils.WXBizMsgCrypt3 import WXBizMsgCrypt
 import xml.etree.cElementTree as ETree
 
 from message.channel.telegram import Telegram
-
 
 login_manager = LoginManager()
 login_manager.login_view = "login"
@@ -72,7 +68,7 @@ def create_flask_app(config):
         "id": 0,
         "name": admin_user,
         "password": admin_password[6:],
-        "pris": "我的媒体库,资源搜索,推荐,订阅管理,下载管理,媒体识别,服务,系统设置,搜索设置,订阅设置"
+        "pris": "我的媒体库,资源搜索,推荐,订阅管理,下载管理,媒体识别,服务,系统设置"
     }]
 
     App = Flask(__name__)
@@ -135,6 +131,7 @@ def create_flask_app(config):
         """
         用户
         """
+
         def __init__(self, user):
             self.username = user.get('name')
             self.password_hash = user.get('password')
@@ -434,9 +431,9 @@ def create_flask_app(config):
     @App.route('/site', methods=['POST', 'GET'])
     @login_required
     def site():
-        Sites = get_config_site()
-        return render_template("rss/site.html",
-                               Sites=Sites)
+        CfgSites = get_config_site()
+        return render_template("setting/site.html",
+                               Sites=CfgSites)
 
     # 推荐页面
     @App.route('/recommend', methods=['POST', 'GET'])
@@ -539,8 +536,8 @@ def create_flask_app(config):
                                CurrentPage=CurrentPage,
                                PageRange=PageRange)
 
-    # 资源搜索页面
-    @App.route('/download', methods=['POST', 'GET'])
+    # 正在下载页面
+    @App.route('/downloading', methods=['POST', 'GET'])
     @login_required
     def download():
         DownloadCount = 0
@@ -601,9 +598,66 @@ def create_flask_app(config):
                 DownloadCount += 1
                 DispTorrents.append(torrent_info)
 
-        return render_template("download.html",
+        return render_template("download/downloading.html",
                                DownloadCount=DownloadCount,
                                Torrents=DispTorrents)
+
+    # 数据统计页面
+    @App.route('/statistics', methods=['POST', 'GET'])
+    @login_required
+    def statistics():
+        # 总上传下载
+        TotalUpload = 0
+        TotalDownload = 0
+        # 站点标签及上传下载
+        SiteNames = []
+        SiteUploads = []
+        SiteDownloads = []
+        SiteRatios = []
+        # 当前上传下载
+        CurrentUpload, CurrentDownload = Downloader().get_pt_data()
+        # 站点上传下载
+        SiteData = Sites().get_pt_date()
+        if isinstance(SiteData, dict):
+            for name, data in SiteData.items():
+                if not data:
+                    continue
+                up = data.get("upload") or 0
+                dl = data.get("download") or 0
+                ratio = data.get("ratio") or 0
+                if not up and not dl and not ratio:
+                    continue
+                if not str(up).isdigit() or not str(dl).isdigit():
+                    continue
+                if name not in SiteNames:
+                    SiteNames.append(name)
+                    TotalUpload += int(up)
+                    TotalDownload += int(dl)
+                    SiteUploads.append(round(int(up)/1024/1024/1024))
+                    SiteDownloads.append(round(int(dl)/1024/1024/1024))
+                    SiteRatios.append(round(float(ratio), 1))
+        # 历史
+        StatisticsHis = get_site_statistics()
+        TotalHisLabels = []
+        TotalUploadHis = []
+        TotalDownloadHis = []
+        for his in StatisticsHis:
+            TotalHisLabels.append(his[0])
+            TotalUploadHis.append(round(int(his[1])/1024/1024/1024))
+            TotalDownloadHis.append(round(int(his[2])/1024/1024/1024))
+
+        return render_template("download/statistics.html",
+                               CurrentDownload=str_filesize(CurrentDownload) + "B",
+                               CurrentUpload=str_filesize(CurrentUpload) + "B",
+                               TotalDownload=str_filesize(TotalDownload) + "B",
+                               TotalUpload=str_filesize(TotalUpload) + "B",
+                               SiteDownloads=SiteDownloads,
+                               SiteUploads=SiteUploads,
+                               SiteRatios=SiteRatios,
+                               SiteNames=SiteNames,
+                               TotalHisLabels=TotalHisLabels,
+                               TotalUploadHis=TotalUploadHis,
+                               TotalDownloadHis=TotalDownloadHis)
 
     # 服务页面
     @App.route('/service', methods=['POST', 'GET'])
@@ -726,7 +780,7 @@ def create_flask_app(config):
                 '''
                 color = "pink"
                 scheduler_cfg_list.append(
-                    {'name': '豆瓣收藏', 'time': interval, 'state': sta_douban, 'id': 'douban', 'svg': svg, 'color': color})
+                    {'name': '豆瓣想看', 'time': interval, 'state': sta_douban, 'id': 'douban', 'svg': svg, 'color': color})
 
         # 实时日志
         svg = '''
@@ -1016,12 +1070,12 @@ def create_flask_app(config):
             # 启动定时服务
             if cmd == "sch":
                 commands = {
-                    "autoremovetorrents": AutoRemoveTorrents().run_schedule,
-                    "pttransfer": PTTransfer().run_schedule,
-                    "ptsignin": PTSignin().run_schedule,
+                    "autoremovetorrents": Downloader().pt_removetorrents,
+                    "pttransfer": Downloader().pt_transfer,
+                    "ptsignin": Sites().signin,
                     "sync": Sync().transfer_all_sync,
-                    "rssdownload": RSSDownloader().run_schedule,
-                    "douban": DoubanSync().run_schedule
+                    "rssdownload": Rss().rssdownload,
+                    "douban": DouBan().sync
                 }
                 sch_item = data.get("item")
                 if sch_item and commands.get(sch_item):
@@ -1212,7 +1266,8 @@ def create_flask_app(config):
                             # 有集数的电视剧
                             for dest_file in get_dir_files_by_ext(dest_path):
                                 file_meta_info = MetaInfo(os.path.basename(dest_file))
-                                if file_meta_info.get_episode_list() and set(file_meta_info.get_episode_list()).issubset(set(meta_info.get_episode_list())):
+                                if file_meta_info.get_episode_list() and set(
+                                        file_meta_info.get_episode_list()).issubset(set(meta_info.get_episode_list())):
                                     try:
                                         shutil.rmtree(dest_file)
                                     except Exception as e:
@@ -1275,6 +1330,8 @@ def create_flask_app(config):
                                              exclude=exclude,
                                              size=size,
                                              note=note)
+                # 生效站点配置
+                Sites().init_config()
                 return {"code": ret}
 
             # 查询单个站点信息
@@ -1363,7 +1420,8 @@ def create_flask_app(config):
                         continue
                     # 生效配置
                     cfg = set_config_value(cfg, key, value)
-                    if key in ['pt.ptsignin_cron', 'pt.pt_monitor', 'pt.pt_check_interval', 'pt.pt_seeding_time', 'douban.interval']:
+                    if key in ['pt.ptsignin_cron', 'pt.pt_monitor', 'pt.pt_check_interval', 'pt.pt_seeding_time',
+                               'douban.interval']:
                         scheduler_reload = True
                     if key.startswith("jellyfin"):
                         jellyfin_reload = True
@@ -1495,7 +1553,7 @@ def create_flask_app(config):
                 poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path')
                 if media_type == MediaType.MOVIE:
                     if doubanid:
-                        douban_info = Douban().movie_detail(doubanid)
+                        douban_info = DoubanApi().movie_detail(doubanid)
                         overview = douban_info.get("intro")
                         poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
 
@@ -1512,7 +1570,7 @@ def create_flask_app(config):
                     }
                 else:
                     if doubanid:
-                        douban_info = Douban().tv_detail(doubanid)
+                        douban_info = DoubanApi().tv_detail(doubanid)
                         overview = douban_info.get("intro")
                         poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
 
@@ -1665,12 +1723,12 @@ def create_flask_app(config):
         if not msg:
             return
         commands = {
-            "/ptr": {"func": AutoRemoveTorrents().run_schedule, "desp": "PT删种"},
-            "/ptt": {"func": PTTransfer().run_schedule, "desp": "PT下载转移"},
-            "/pts": {"func": PTSignin().run_schedule, "desp": "PT站签到"},
+            "/ptr": {"func": Downloader().pt_removetorrents, "desp": "PT删种"},
+            "/ptt": {"func": Downloader().pt_transfer, "desp": "PT下载转移"},
+            "/pts": {"func": Sites().signin, "desp": "PT站签到"},
             "/rst": {"func": Sync().transfer_all_sync, "desp": "监控目录全量同步"},
-            "/rss": {"func": RSSDownloader().run_schedule, "desp": "RSS订阅"},
-            "/db": {"func": DoubanSync().run_schedule, "desp": "豆瓣收藏同步"}
+            "/rss": {"func": Rss().rssdownload, "desp": "RSS订阅"},
+            "/db": {"func": DouBan().sync, "desp": "豆瓣同步"}
         }
         command = commands.get(msg)
         if command:
