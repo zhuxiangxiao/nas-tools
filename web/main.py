@@ -31,7 +31,7 @@ from rmt.metainfo import MetaInfo
 from pt.mediaserver.jellyfin import Jellyfin
 from pt.mediaserver.plex import Plex
 from message.send import Message
-from config import WECHAT_MENU, PT_TRANSFER_INTERVAL, LOG_QUEUE
+from config import WECHAT_MENU, PT_TRANSFER_INTERVAL, LOG_QUEUE, RMT_MEDIAEXT
 from service.run import stop_scheduler, restart_scheduler
 from service.scheduler import Scheduler
 from utils.functions import get_used_of_partition, str_filesize, str_timelong, get_system, get_dir_files_by_ext
@@ -390,7 +390,7 @@ def create_flask_app(config):
                                AnimeNums=AnimeNums
                                )
 
-    # 影音搜索页面
+    # 资源搜索页面
     @App.route('/search', methods=['POST', 'GET'])
     @login_required
     def search():
@@ -404,12 +404,74 @@ def create_flask_app(config):
         SearchWord = request.args.get("s")
         NeedSearch = request.args.get("f")
         res = get_search_results()
+        # 类型字典
+        MeidaTypeDict = {}
+        # 站点字典
+        MediaSiteDict = {}
+        # 资源类型字典
+        MediaRestypeDict = {}
+        # 分辨率字典
+        MediaPixDict = {}
+        # 查询统计值
+        for item in res:
+            # 资源类型
+            if str(item[2]).find(" ") != -1:
+                restypes = str(item[2]).split(" ")
+                if len(restypes) > 0:
+                    if not MediaRestypeDict.get(restypes[0]):
+                        MediaRestypeDict[restypes[0]] = 1
+                    else:
+                        MediaRestypeDict[restypes[0]] += 1
+                # 分辨率
+                if len(restypes) > 1:
+                    if not MediaPixDict.get(restypes[1]):
+                        MediaPixDict[restypes[1]] = 1
+                    else:
+                        MediaPixDict[restypes[1]] += 1
+            # 类型
+            if item[10]:
+                mtype = {"MOV": "电影", "TV": "电视剧", "ANI": "动漫"}.get(item[10])
+                if not MeidaTypeDict.get(mtype):
+                    MeidaTypeDict[mtype] = 1
+                else:
+                    MeidaTypeDict[mtype] += 1
+            # 站点
+            if item[6]:
+                if not MediaSiteDict.get(item[6]):
+                    MediaSiteDict[item[6]] = 1
+                else:
+                    MediaSiteDict[item[6]] += 1
+        # 展示类型
+        MediaMTypes = []
+        for k, v in MeidaTypeDict.items():
+            MediaMTypes.append({"name": k, "num": v})
+        MediaMTypes = sorted(MediaMTypes, key=lambda x: int(x.get("num")), reverse=True)
+        # 展示站点
+        MediaSites = []
+        for k, v in MediaSiteDict.items():
+            MediaSites.append({"name": k, "num": v})
+        MediaSites = sorted(MediaSites, key=lambda x: int(x.get("num")), reverse=True)
+        # 展示分辨率
+        MediaPixs = []
+        for k, v in MediaPixDict.items():
+            MediaPixs.append({"name": k, "num": v})
+        MediaPixs = sorted(MediaPixs, key=lambda x: int(x.get("num")), reverse=True)
+        # 展示质量
+        MediaRestypes = []
+        for k, v in MediaRestypeDict.items():
+            MediaRestypes.append({"name": k, "num": v})
+        MediaRestypes = sorted(MediaRestypes, key=lambda x: int(x.get("num")), reverse=True)
+
         return render_template("search.html",
                                UserPris=str(pris).split(","),
                                SearchWord=SearchWord or "",
                                NeedSearch=NeedSearch or "",
                                Count=len(res),
-                               Items=res)
+                               Items=res,
+                               MediaMTypes=MediaMTypes,
+                               MediaSites=MediaSites,
+                               MediaPixs=MediaPixs,
+                               MediaRestypes=MediaRestypes)
 
     # 电影订阅页面
     @App.route('/movie_rss', methods=['POST', 'GET'])
@@ -1215,6 +1277,7 @@ def create_flask_app(config):
                 year = data.get("year")
                 mtype = data.get("type")
                 season = data.get("season")
+                episode_format = data.get("episode_format")
                 if mtype == "TV":
                     media_type = MediaType.TV
                 elif mtype == "MOV":
@@ -1224,17 +1287,24 @@ def create_flask_app(config):
                 tmdb_info = Media().get_media_info_manual(media_type, title, year, tmdbid)
                 if not tmdb_info:
                     return {"retcode": 1, "retmsg": "转移失败，无法查询到TMDB信息"}
+                # 如果改次手动修复时一个单文件，自动修复改目录下同名文件，需要配合episode_format生效
+                need_fix_all = False
+                if ".%s" % os.path.splitext(path)[-1].lower() in RMT_MEDIAEXT and episode_format:
+                    path = os.path.dirname(path)
+                    need_fix_all = True
                 succ_flag, ret_msg = FileTransfer().transfer_media(in_from=SyncType.MAN,
                                                                    in_path=path,
                                                                    target_dir=dest_dir,
                                                                    tmdb_info=tmdb_info,
                                                                    media_type=media_type,
-                                                                   season=season)
+                                                                   season=season,
+                                                                   episode_format=(episode_format, need_fix_all, logid))
                 if succ_flag:
-                    if logid:
-                        insert_transfer_blacklist(path)
-                    else:
-                        update_transfer_unknown_state(path)
+                    if not need_fix_all:
+                        if logid:
+                            insert_transfer_blacklist(path)
+                        else:
+                            update_transfer_unknown_state(path)
                     return {"retcode": 0, "retmsg": "转移成功"}
                 else:
                     return {"retcode": 2, "retmsg": ret_msg}

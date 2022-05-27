@@ -1,4 +1,4 @@
-<div class="container-xl">
+<div class="container-fluid">
   <div class="page-header d-print-none">
     <div class="row align-items-center">
       <div class="col">
@@ -11,7 +11,7 @@
 </div>
 <!-- 业务页面代码 -->
 <div class="page-body">
-  <div class="container-xl">
+  <div class="container-fluid">
     <div class="row row-cards">
       <div class="col-md-12">
         <div class="card">
@@ -21,11 +21,9 @@
                 共 {{ TotalCount }} 条记录
               </div>
             </div>
-            <div class="card-actions">
-              <a href="javascript:delete_checked_unknown()">
-                批量删除
-                <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-trash" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                   <desc>Download more icon variants from https://tabler-icons.io/i/trash</desc>
+            <div class="card-actions btn-actions">
+              <a href="javascript:delete_checked_unknown()" class="btn-action" title="删除选中">
+                <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                    <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
                    <line x1="4" y1="7" x2="20" y2="7"></line>
                    <line x1="10" y1="11" x2="10" y2="17"></line>
@@ -177,6 +175,12 @@
               </select>
             </div>
           </div>
+            <div class="col-lg-6" id="rename_episode_div">
+              <div class="mb-3">
+                <label class="form-label">自定义集数位置(<a href="#" title="标定集数位置，例如：铁齿铜牙纪晓岚{episode}.iso">?</a>)</label>
+                <input type="text" id="rename_episode" class="form-control">
+              </div>
+            </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -217,6 +221,7 @@
     var title = $("#rename_title").val();
     var year = $("#rename_year").val();
     var season = $("#rename_season").val();
+    var episode_format = $("#rename_episode").val();
 
     if (!unknown_id){
       return;
@@ -251,8 +256,9 @@
         $("#rename_tmdb").removeClass("is-invalid");
       }
     }
+
     // 开始处理
-    var data = { "unknown_id": unknown_id, "path": path, "type": type, "title": title, "year": year, "tmdb": tmdb, "season": season };
+    var data = { "unknown_id": unknown_id, "path": path, "type": type, "title": title, "year": year, "tmdb": tmdb, "season": season, "episode_format": episode_format};
     $("#rename_btn").attr("disabled", true);
     $("#rename_btn").text("处理中...");
     $("#rename_retmsg").hide()
@@ -284,9 +290,11 @@
     type = $('input:radio[name=rename_type]:checked').val();
     if (type == "MOV") {
       $("#rename_season_div").hide();
+      $("#rename_episode_div").hide();
       $("#rename_season").val("");
     } else {
       $("#rename_season_div").show();
+      $("#rename_episode_div").show();
     }
     $('#modal-rename').modal('show');
   }
@@ -348,10 +356,12 @@
   $('input[type=radio][name=rename_type]').change(function () {
     if (this.value == 'MOV') {
       $("#rename_season_div").hide();
+      $("#rename_episode_div").hide();
       $("#rename_season").val('');
     }
     else {
       $("#rename_season_div").show();
+      $("#rename_episode_div").show();
     }
   });
 

@@ -1,4 +1,4 @@
-<div class="container-xl">
+<div class="container-fluid">
   <!-- Page title -->
   <div class="page-header d-print-none">
     <div class="row align-items-center">
@@ -45,9 +45,9 @@
 </div>
 <!-- 业务页面代码 -->
 <div class="page-body">
-  <div class="container-xl">
+  <div class="container-fluid">
     <div class="row row-cards">
-      <div class="col-md-6 col-xl-3">
+      <div class="col-sm-6 col-md-4 col-xl-3">
         <a class="card card-link" href="#" data-bs-toggle="modal" data-bs-target="#modal-jackett">
           <div class="card-cover card-cover-blurred text-center bg-black">
             <span class="avatar avatar-xl avatar-thumb avatar-rounded" style="background-image: url(../static/img/jackett.png)">
@@ -59,7 +59,7 @@
           </div>
         </a>
       </div>
-      <div class="col-md-6 col-xl-3">
+      <div class="col-sm-6 col-md-4 col-xl-3">
         <a class="card card-link" href="#" data-bs-toggle="modal" data-bs-target="#modal-prowlarr">
           <div class="card-cover card-cover-blurred text-center bg-orange">
             <span class="avatar avatar-xl avatar-thumb avatar-rounded" style="background-image: url(../static/img/prowlarr.png)">
@@ -144,7 +144,7 @@
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="modal-search-rule-title">过滤规则</h5>
+        <h5 class="modal-title" id="modal-search-rule-title">过滤规则(<a href="#" title="微信/Telegram/豆瓣等自动匹配下载场景下生效">?</a>)</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
@@ -304,6 +304,20 @@
       show_role_info();
       $("#save_or_edit_rule_btn").text("编辑");
     });
+  }
+
+  //编辑搜索规则
+  function edit_role_info(){
+    //隐藏
+    $("#search_include_pre").hide();
+    $("#search_exclude_pre").hide();
+    $("#search_note_pre").hide();
+    $("#search_size_pre").hide();
+    //显示
+    $("#search_include").show();
+    $("#search_exclude").show();
+    $("#search_note").show();
+    $("#search_size").show();
   }
 
   //规则编辑保存
