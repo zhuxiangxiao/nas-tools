@@ -1,19 +1,19 @@
-<div class="container-fluid">
+<div class="container-xxl">
   <!-- Page title -->
   <div class="page-header d-print-none">
     <div class="row align-items-center">
       <div class="col">
-        <h2 class="page-title">
+        <h2 class="page-title text-nowrap">
           资源搜索
         </h2>
-        {% if Count > 0 %}
-        <div class="text-muted mt-1">共搜索到 {{ Count }} 条记录</div>
+        {% if Count > 8 %}
+        <div class="text-muted mt-1 d-none d-md-block">共搜索到 {{ Count }} 条记录</div>
         {% endif %}
       </div>
       <div class="col-auto ms-auto d-print-none">
         <div class="d-flex btn-list">
           <div class="input-icon">
-            <input id="search_word" type="text" value="" class="form-control" placeholder="Search…">
+            <input id="search_word" type="text" value="" class="form-control" placeholder="搜索…">
             <span class="input-icon-addon">
               <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><circle cx="10" cy="10" r="7" /><line x1="21" y1="21" x2="15" y2="15" /></svg>
             </span>
@@ -34,7 +34,7 @@
 <!-- 业务页面代码 -->
 {% if Count > 0 %}
 <div class="page-body">
-  <div class="container-fluid">
+  <div class="container-xxl">
     <div class="row g-4">
       {% if Count > 8 %}
       <div class="col-md-3 col-lg-2 d-none d-md-block">
@@ -82,9 +82,11 @@
         <div class="row row-cards" id="media_cards">
           {% for Item in Items  %}
           <div class="col-sm-6 {% if Count > 8 %}col-lg-4{% else %}col-lg-3{% endif %} media_card" id="media_card_{{ Item[0] }}">
-            <div class="card card-sm">
+            <div class="card card-sm rounded-3">
               <div class="ribbon ribbon-top ribbon-bookmark {% if Item[11] > 8 %} bg-green {% elif Item[11] <= 8 and Item[11] >= 6 %} bg-blue {% else %} bg-orange {% endif %}">{{ Item[11] }}</div>
-              <a href="javascript:show_download_modal('{{ Item[0] }}','{{ Item[1] }}')" class="d-block" ><img src="{{ Item[9] }}" class="card-img-top" title="点击添加下载"></a>
+              <a href="javascript:show_download_modal('{{ Item[0] }}','{{ Item[1] }}')" class="d-block" >
+                <img src="{{ Item[9] }}" class="card-img-top" title="点击添加下载" style="border-top-left-radius:8px !important; border-top-right-radius:8px !important">
+              </a>
               <div class="card-body">
                 <div class="d-flex align-items-center mb-2">
                   <input type="hidden" name="media_card_type" value="{{ Item[10] }}">
@@ -158,7 +160,7 @@
 </div>
 {% else %}
 <div class="page-body">
-  <div class="container-xl d-flex flex-column justify-content-center">
+  <div class="container-xxl d-flex flex-column justify-content-center">
     <div class="empty">
       <div class="empty-img"><img src="./static/img/posting_photo.svg" height="128"  alt="">
       </div>

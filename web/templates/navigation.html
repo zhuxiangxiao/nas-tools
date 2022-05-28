@@ -17,7 +17,7 @@
   <body>
     <div class="page">
       <aside class="navbar navbar-vertical navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
+        <div class="container-xxl">
           <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-auto-collapse="true" data-bs-target="#navbar-menu">
             <span class="navbar-toggler-icon"></span>
           </button>
@@ -169,6 +169,9 @@
                   <a class="dropdown-item" href="#" onclick="navmenu('downloading')">
                     正在下载
                   </a>
+                  <a class="dropdown-item" href="#" onclick="navmenu('downloaded')">
+                    近期下载
+                  </a>
                   <a class="dropdown-item" href="#" onclick="navmenu('statistics')">
                     数据统计
                   </a>
@@ -201,6 +204,9 @@
                   </a>
                   <a class="dropdown-item" href="#" onclick="navmenu('history')">
                     历史记录
+                  </a>
+                  <a class="dropdown-item" href="#" onclick="navmenu('tmdbcache')">
+                    TMDB缓存
                   </a>
                 </div>
               </li>
@@ -273,7 +279,7 @@
         </div>
       </aside>
       <header class="navbar navbar-expand-md navbar-light d-none d-lg-flex d-print-none">
-        <div class="container-fluid">
+        <div class="container-xxl">
           <div class="navbar-nav flex-row order-md-last">
             <div class="nav-item d-none d-md-flex me-3">
               <div class="btn-list">
@@ -360,7 +366,7 @@
       <div class="page-wrapper">
         <div id="page_content"></div>
         <footer class="footer footer-transparent d-print-none">
-          <div class="container-fluid">
+          <div class="container-xxl">
             <div class="row text-center align-items-center flex-row-reverse">
               <div class="col-12 col-lg-auto mt-3 mt-lg-0">
                 <ul class="list-inline list-inline-dots mb-0">

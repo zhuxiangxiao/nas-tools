@@ -5,6 +5,7 @@ import threading
 import log
 from config import Config
 from utils.functions import singleton
+from utils.db_pool import DBPool
 
 lock = threading.Lock()
 
@@ -25,13 +26,16 @@ class DBHelper:
             log.console("【ERROR】NASTOOL_CONFIG 环境变量未设置，程序无法工作，正在退出...")
             quit()
         self.__db_path = os.path.join(os.path.dirname(config_path), 'user.db')
-        self.__connection = sqlite3.connect(self.__db_path, check_same_thread=False)
+        self.__pools = DBPool(
+            max_active=5, max_wait=20, init_size=5, db_type="SQLite3",
+            **{'database': self.__db_path, 'check_same_thread': False})
 
     def __init_tables(self):
-        cursor = self.__connection.cursor()
+        conn = self.__pools.get()
+        cursor = conn.cursor()
         try:
             # Jackett搜索结果表
-            cursor.execute('''CREATE TABLE IF NOT EXISTS SEARCH_TORRENTS
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SEARCH_RESULTS
                                    (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
                                    TORRENT_NAME    TEXT,
                                    ENCLOSURE    TEXT,
@@ -44,6 +48,9 @@ class DBHelper:
                                    ES_STRING    TEXT,
                                    VOTE    TEXT,
                                    IMAGE    TEXT,
+                                   POSTER   TEXT,
+                                   TMDBID   TEXT,
+                                   OVERVIEW    TEXT,
                                    RES_TYPE    TEXT,
                                    RES_ORDER    TEXT,
                                    SIZE    INTEGER,
@@ -189,49 +196,70 @@ class DBHelper:
                                                            URL     TEXT);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_STATISTICS_DS ON SITE_STATISTICS (DATE, URL);''')
 
+            # 下载历史
+            cursor.execute('''CREATE TABLE IF NOT EXISTS DOWNLOAD_HISTORY
+                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                                           TITLE    TEXT,
+                                                           YEAR    TEXT,
+                                                           TYPE    TEXT,
+                                                           TMDBID     TEXT,
+                                                           VOTE     TEXT,
+                                                           POSTER     TEXT,
+                                                           OVERVIEW    TEXT,
+                                                           TORRENT     TEXT,
+                                                           ENCLOSURE     TEXT,
+                                                           SITE     TEXT,
+                                                           DESC     TEXT,
+                                                           DATE     TEXT);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_DOWNLOAD_HISTORY_DATE ON DOWNLOAD_HISTORY (DATE);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_DOWNLOAD_HISTORY_TITLE ON DOWNLOAD_HISTORY (TITLE);''')
+
             # 提交
-            self.__connection.commit()
+            conn.commit()
 
         except Exception as e:
             log.error(f"【DB】创建数据库错误：{e}")
         finally:
-            cursor.close()
+            self.__pools.free(conn)
 
     def excute(self, sql, data):
         if not sql:
             return False
-        cursor = self.__connection.cursor()
+        conn = self.__pools.get()
+        cursor = conn.cursor()
         try:
             if data:
                 cursor.execute(sql, data)
             else:
                 cursor.execute(sql)
-            self.__connection.commit()
+            conn.commit()
         except Exception as e:
             log.error(f"【DB】执行SQL出错：sql:{sql}; parameters:{data}; {e}")
             return False
         finally:
-            cursor.close()
+            self.__pools.free(conn)
         return True
 
     def excute_many(self, sql, data_list):
         if not sql or not data_list:
             return False
-        cursor = self.__connection.cursor()
+        conn = self.__pools.get()
+        cursor = conn.cursor()
         try:
             cursor.executemany(sql, data_list)
-            self.__connection.commit()
+            conn.commit()
         except Exception as e:
             log.error(f"【DB】执行SQL出错：sql:{sql}; parameters:{data_list}; {e}")
             return False
         finally:
-            cursor.close()
+            self.__pools.free(conn)
         return True
 
     def select(self, sql, data):
         if not sql:
             return False
-        cursor = self.__connection.cursor()
+        conn = self.__pools.get()
+        cursor = conn.cursor()
         try:
             if data:
                 res = cursor.execute(sql, data)
@@ -242,7 +270,7 @@ class DBHelper:
             log.error(f"【DB】执行SQL出错：sql:{sql}; parameters:{data}; {e}")
             return []
         finally:
-            cursor.close()
+            self.__pools.free(conn)
         return ret
 
 

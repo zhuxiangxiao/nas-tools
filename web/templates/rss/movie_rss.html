@@ -1,4 +1,4 @@
-<div class="container-fluid">
+<div class="container-xxl">
   <div class="page-header d-print-none">
     <div class="row align-items-center">
       <div class="col">
@@ -22,13 +22,13 @@
 </div>
 {% if Count > 0 %}
 <div class="page-body">
-  <div class="container-fluid">
+  <div class="container-xxl">
     <div class="row row-cards">
       {% for Item in Items %}
       <div class="col-sm-6 col-md-4 col-xl-3">
-        <a class="card card-link" href="javascript:show_media_info('{{ Item[0] }}', '{{ Item[1] }}', '{{ Item[2] }}', '{{ Item[6] }}')" title="{{ Item[4] }}">
-          <div class="text-center rounded">
-            <img class="rounded-top" src="{{ Item[3] }}">
+        <a class="card card-link rounded-3" href="javascript:show_media_info('{{ Item[0] }}', '{{ Item[1] }}', '{{ Item[2] }}', '{{ Item[6] }}')" title="{{ Item[4] }}">
+          <div class="text-center">
+            <img class="rounded-top" src="{{ Item[3] }}" style="border-top-left-radius:8px !important; border-top-right-radius:8px !important">
           </div>
           <div class="card-body text-center">
             <div class="card-title mb-1">
@@ -69,7 +69,7 @@
 </div>
 {% else %}
 <div class="page-body">
-  <div class="container-xl d-flex flex-column justify-content-center">
+  <div class="container-xxl d-flex flex-column justify-content-center">
     <div class="empty">
       <div class="empty-img"><img src="./static/img/sign_in.svg" height="128"  alt="">
       </div>

@@ -1,10 +1,13 @@
 import _thread
+import base64
+import datetime
 import logging
 import os.path
 import shutil
 import signal
 import subprocess
 import importlib
+import traceback
 from math import floor
 from subprocess import call
 import requests
@@ -35,13 +38,15 @@ from config import WECHAT_MENU, PT_TRANSFER_INTERVAL, LOG_QUEUE, RMT_MEDIAEXT
 from service.run import stop_scheduler, restart_scheduler
 from service.scheduler import Scheduler
 from utils.functions import get_used_of_partition, str_filesize, str_timelong, get_system, get_dir_files_by_ext
+from utils.meta_helper import MetaHelper
 from utils.sqls import get_search_result_by_id, get_search_results, \
     get_transfer_history, get_transfer_unknown_paths, \
     update_transfer_unknown_state, delete_transfer_unknown, get_transfer_path_by_id, insert_transfer_blacklist, \
     delete_transfer_log_by_id, get_config_site, insert_config_site, get_site_by_id, delete_config_site, \
     update_config_site, get_config_search_rule, update_config_search_rule, get_config_rss_rule, update_config_rss_rule, \
     get_unknown_path_by_id, get_rss_tvs, get_rss_movies, delete_rss_movie, delete_rss_tv, \
-    get_users, insert_user, delete_user, get_transfer_statistics, get_system_messages, get_site_statistics
+    get_users, insert_user, delete_user, get_transfer_statistics, get_system_messages, get_site_statistics, \
+    get_download_history
 from utils.types import MediaType, SearchType, DownloaderType, SyncType, OsType
 from version import APP_VERSION
 from web.backend.douban_hot import DoubanHot
@@ -73,7 +78,8 @@ def create_flask_app(config):
 
     App = Flask(__name__)
     App.config['JSON_AS_ASCII'] = False
-    App.secret_key = 'jxxghp'
+    App.secret_key = os.urandom(24)
+    App.permanent_session_lifetime = datetime.timedelta(days=30)
     applog = logging.getLogger('werkzeug')
     applog.setLevel(logging.ERROR)
     login_manager.init_app(App)
@@ -601,7 +607,7 @@ def create_flask_app(config):
     # 正在下载页面
     @App.route('/downloading', methods=['POST', 'GET'])
     @login_required
-    def download():
+    def downloading():
         DownloadCount = 0
         Client, Torrents = Downloader().pt_downloading_torrents()
         DispTorrents = []
@@ -663,6 +669,15 @@ def create_flask_app(config):
         return render_template("download/downloading.html",
                                DownloadCount=DownloadCount,
                                Torrents=DispTorrents)
+
+    # 近期下载页面
+    @App.route('/downloaded', methods=['POST', 'GET'])
+    @login_required
+    def downloaded():
+        Items = get_download_history()
+        return render_template("download/downloaded.html",
+                               Count=len(Items),
+                               Items=Items)
 
     # 数据统计页面
     @App.route('/statistics', methods=['POST', 'GET'])
@@ -907,6 +922,51 @@ def create_flask_app(config):
                                TotalPage=TotalPage,
                                PageRange=PageRange,
                                PageNum=PageNum)
+
+    # TMDB缓存页面
+    @App.route('/tmdbcache', methods=['POST', 'GET'])
+    @login_required
+    def tmdbcache():
+        page_num = request.args.get("pagenum")
+        if not page_num:
+            page_num = 30
+        search_str = request.args.get("s")
+        if not search_str:
+            search_str = ""
+        current_page = request.args.get("page")
+        if not current_page:
+            current_page = 1
+        else:
+            current_page = int(current_page)
+        total_count, tmdb_caches = MetaHelper().dump_meta_data(search_str, current_page, page_num)
+
+        total_page = floor(total_count / page_num) + 1
+
+        if total_page <= 5:
+            start_page = 1
+            end_page = total_page
+        else:
+            if current_page <= 3:
+                start_page = 1
+                end_page = 5
+            else:
+                start_page = current_page - 3
+                if total_page > current_page + 3:
+                    end_page = current_page + 3
+                else:
+                    end_page = total_page
+
+        page_range = range(start_page, end_page + 1)
+
+        return render_template("rename/tmdbcache.html",
+                               TotalCount=total_count,
+                               Count=len(tmdb_caches),
+                               TmdbCaches=tmdb_caches,
+                               Search=search_str,
+                               CurrentPage=current_page,
+                               TotalPage=total_page,
+                               PageRange=page_range,
+                               PageNum=page_num)
 
     # 手工识别页面
     @App.route('/unidentification', methods=['POST', 'GET'])
@@ -1171,6 +1231,11 @@ def create_flask_app(config):
                     msg_item.type = mtype
                     msg_item.description = res[9]
                     msg_item.size = res[10]
+                    msg_item.tmdb_id = res[11]
+                    msg_item.poster_path = res[12]
+                    msg_item.overview = res[13]
+                    msg_item.enclosure = res[0]
+                    msg_item.site = res[14]
                     Message().send_download_message(SearchType.WEB, msg_item)
                 return {"retcode": 0}
 
@@ -1713,6 +1778,12 @@ def create_flask_app(config):
                 messages = get_system_messages(lst_time=lst_time)
                 return {"code": 0, "message": messages}
 
+            # 删除tmdb缓存
+            if cmd == "delete_tmdb_cache":
+                if MetaHelper().delete_meta_data(data.get("cache_key")):
+                    MetaHelper().save_meta_data()
+                return {"code": 0}
+
     # 响应企业微信消息
     @App.route('/wechat', methods=['GET', 'POST'])
     def wechat():
@@ -1737,31 +1808,32 @@ def create_flask_app(config):
             return sEchoStr
         else:
             sReqData = request.data
-            log.debug("收到微信消息：" + str(sReqData))
+            log.debug("收到微信消息：%s" % str(sReqData))
             ret, sMsg = wxcpt.DecryptMsg(sReqData, sVerifyMsgSig, sVerifyTimeStamp, sVerifyNonce)
             if ret != 0:
-                log.error("解密微信消息失败 DecryptMsg ret：%s" % str(ret))
+                log.error("解密微信消息失败 DecryptMsg ret = %s" % str(ret))
+                return make_response("ok", 200)
             xml_tree = ETree.fromstring(sMsg)
-            reponse_text = ""
             try:
+                content = ""
                 msg_type = xml_tree.find("MsgType").text
                 user_id = xml_tree.find("FromUserName").text
                 if msg_type == "event":
                     event_key = xml_tree.find("EventKey").text
-                    log.info("点击菜单：" + event_key)
-                    content = WECHAT_MENU[event_key.split('#')[2]]
+                    if event_key:
+                        log.info("点击菜单：%s" % event_key)
+                        keys = event_key.split('#')
+                        if len(keys) > 2:
+                            content = WECHAT_MENU.get(keys[2])
                 else:
                     content = xml_tree.find("Content").text
-                    log.info("消息内容：" + content)
-                    reponse_text = content
-            except Exception as err:
-                log.error("发生错误：%s" % str(err))
-                return make_response("", 200)
-            # 处理消息内容
-            content = content.strip()
-            if content:
+                    log.info("消息内容：%s" % content)
+                # 处理消息内容
                 handle_message_job(content, SearchType.WX, user_id)
-            return make_response(reponse_text, 200)
+                return make_response(content, 200)
+            except Exception as err:
+                log.error("微信消息处理发生错误：%s - %s" % (str(err), traceback.format_exc()))
+                return make_response("ok", 200)
 
     # Emby消息通知
     @App.route('/jellyfin', methods=['POST'])
@@ -1787,6 +1859,11 @@ def create_flask_app(config):
             if text:
                 handle_message_job(text, SearchType.TG, user_id)
         return 'ok'
+
+    # 自定义模板过滤器
+    @App.template_filter('b64encode')
+    def b64encode(s):
+        return base64.b64encode(s.encode()).decode()
 
     # 处理消息事件
     def handle_message_job(msg, in_from=SearchType.OT, user_id=None):
