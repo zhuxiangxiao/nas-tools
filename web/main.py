@@ -11,7 +11,7 @@ import traceback
 from math import floor
 from subprocess import call
 import requests
-from flask import Flask, request, json, render_template, make_response
+from flask import Flask, request, json, render_template, make_response, session
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -46,7 +46,7 @@ from utils.sqls import get_search_result_by_id, get_search_results, \
     update_config_site, get_config_search_rule, update_config_search_rule, get_config_rss_rule, update_config_rss_rule, \
     get_unknown_path_by_id, get_rss_tvs, get_rss_movies, delete_rss_movie, delete_rss_tv, \
     get_users, insert_user, delete_user, get_transfer_statistics, get_system_messages, get_site_statistics, \
-    get_download_history
+    get_download_history, get_site_statistics_recent_sites
 from utils.types import MediaType, SearchType, DownloaderType, SyncType, OsType
 from version import APP_VERSION
 from web.backend.douban_hot import DoubanHot
@@ -223,11 +223,12 @@ def create_flask_app(config):
             if GoPage.startswith('/'):
                 GoPage = GoPage[1:]
             username = request.form.get('username')
+            password = request.form.get('password')
+            remember = request.form.get('remember')
             if not username:
                 return render_template('login.html',
                                        GoPage=GoPage,
                                        err_msg="请输入用户名")
-            password = request.form.get('password')
             user_info = get_user(username)
             if not user_info:
                 return render_template('login.html',
@@ -239,6 +240,7 @@ def create_flask_app(config):
             if user.verify_password(password):
                 # 创建用户 Session
                 login_user(user)
+                session.permanent = True if remember else False
                 pris = user_info.get("pris")
                 return render_template('navigation.html',
                                        GoPage=GoPage,
@@ -591,7 +593,6 @@ def create_flask_app(config):
             else:
                 # 替换图片分辨率
                 image = image.replace("s_ratio_poster", "m_ratio_poster")
-                image = "https://images.weserv.nl/?url=%s" % image
             vote = res.get('vote_average')
             overview = res.get('overview')
             item = {'id': rid, 'title': title, 'fav': fav, 'date': date, 'vote': vote,
@@ -691,8 +692,6 @@ def create_flask_app(config):
         SiteUploads = []
         SiteDownloads = []
         SiteRatios = []
-        # 当前上传下载
-        CurrentUpload, CurrentDownload = Downloader().get_pt_data()
         # 站点上传下载
         SiteData = Sites().get_pt_date()
         if isinstance(SiteData, dict):
@@ -710,18 +709,22 @@ def create_flask_app(config):
                     SiteNames.append(name)
                     TotalUpload += int(up)
                     TotalDownload += int(dl)
-                    SiteUploads.append(round(int(up)/1024/1024/1024))
-                    SiteDownloads.append(round(int(dl)/1024/1024/1024))
+                    SiteUploads.append(round(int(up) / 1024 / 1024 / 1024))
+                    SiteDownloads.append(round(int(dl) / 1024 / 1024 / 1024))
                     SiteRatios.append(round(float(ratio), 1))
-        # 历史
-        StatisticsHis = get_site_statistics()
+
+        # 近期上传下载各站点汇总
+        CurrentUpload, CurrentDownload, CurrentSiteLabels, CurrentSiteUploads, CurrentSiteDownloads = get_site_statistics_recent_sites(
+            days=7)
+        # 总上传下载历史
+        StatisticsHis = get_site_statistics(days=30)
         TotalHisLabels = []
         TotalUploadHis = []
         TotalDownloadHis = []
         for his in StatisticsHis:
             TotalHisLabels.append(his[0])
-            TotalUploadHis.append(round(int(his[1])/1024/1024/1024))
-            TotalDownloadHis.append(round(int(his[2])/1024/1024/1024))
+            TotalUploadHis.append(round(int(his[1]) / 1024 / 1024 / 1024))
+            TotalDownloadHis.append(round(int(his[2]) / 1024 / 1024 / 1024))
 
         return render_template("download/statistics.html",
                                CurrentDownload=str_filesize(CurrentDownload) + "B",
@@ -734,7 +737,10 @@ def create_flask_app(config):
                                SiteNames=SiteNames,
                                TotalHisLabels=TotalHisLabels,
                                TotalUploadHis=TotalUploadHis,
-                               TotalDownloadHis=TotalDownloadHis)
+                               TotalDownloadHis=TotalDownloadHis,
+                               CurrentSiteLabels=CurrentSiteLabels,
+                               CurrentSiteUploads=CurrentSiteUploads,
+                               CurrentSiteDownloads=CurrentSiteDownloads)
 
     # 服务页面
     @App.route('/service', methods=['POST', 'GET'])
@@ -1354,7 +1360,7 @@ def create_flask_app(config):
                     return {"retcode": 1, "retmsg": "转移失败，无法查询到TMDB信息"}
                 # 如果改次手动修复时一个单文件，自动修复改目录下同名文件，需要配合episode_format生效
                 need_fix_all = False
-                if ".%s" % os.path.splitext(path)[-1].lower() in RMT_MEDIAEXT and episode_format:
+                if "%s" % os.path.splitext(path)[-1].lower() in RMT_MEDIAEXT and episode_format:
                     path = os.path.dirname(path)
                     need_fix_all = True
                 succ_flag, ret_msg = FileTransfer().transfer_media(in_from=SyncType.MAN,
@@ -1690,7 +1696,7 @@ def create_flask_app(config):
                     if doubanid:
                         douban_info = DoubanApi().movie_detail(doubanid)
                         overview = douban_info.get("intro")
-                        poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
+                        poster_path = douban_info.get("cover_url")
 
                     return {
                         "code": 0,
@@ -1707,7 +1713,7 @@ def create_flask_app(config):
                     if doubanid:
                         douban_info = DoubanApi().tv_detail(doubanid)
                         overview = douban_info.get("intro")
-                        poster_path = "https://images.weserv.nl/?url=%s" % douban_info.get("cover_url")
+                        poster_path = douban_info.get("cover_url")
 
                     return {
                         "code": 0,
@@ -1815,6 +1821,9 @@ def create_flask_app(config):
                 return make_response("ok", 200)
             xml_tree = ETree.fromstring(sMsg)
             try:
+                # 打开企业微信会产生心跳，filter
+                if xml_tree.find("MsgType") is None:
+                    return
                 content = ""
                 msg_type = xml_tree.find("MsgType").text
                 user_id = xml_tree.find("FromUserName").text

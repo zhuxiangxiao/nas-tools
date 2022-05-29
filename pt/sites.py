@@ -1,4 +1,5 @@
 import re
+import traceback
 from datetime import datetime
 from threading import Lock
 
@@ -68,20 +69,20 @@ class Sites:
                         upload = self.__get_site_upload(html_text)
                         # 下载量
                         download = self.__get_site_download(html_text)
-                        if upload is None or download is None:
+                        if upload is None and download is None:
                             continue
                         # 分享率
                         ratio = self.__get_site_ratio(html_text)
                         if not self.__sites_data.get(site_name):
-                            self.__sites_data[site_name] = {"upload": upload, "download": download, "ratio": ratio}
+                            self.__sites_data[site_name] = {"upload": upload or 0, "download": download or 0, "ratio": ratio}
                             # 登记历史数据
-                            insert_site_statistics(site=site_name, upload=upload, download=download, ratio=ratio, url=site_url)
+                            insert_site_statistics(site=site_name, upload=upload or 0, download=download or 0, ratio=ratio, url=site_url)
                     elif not res:
                         log.error("【PT】站点 %s 连接失败：%s" % (site_name, site_url))
                     else:
                         log.error("【PT】站点 %s 获取流量数据失败，状态码：%s" % (site_name, res.status_code))
                 except Exception as e:
-                    log.error("【PT】站点 %s 获取流量数据失败：%s" % (site_name, str(e)))
+                    log.error("【PT】站点 %s 获取流量数据失败：%s - %s" % (site_name, str(e), traceback.format_exc()))
             # 更新时间
             if self.__sites_data:
                 self.__last_update_time = datetime.now()
@@ -113,7 +114,7 @@ class Sites:
                     else:
                         status.append("%s 签到失败，状态码：%s" % (pt_task, res.status_code))
                 except Exception as e:
-                    log.error("【PT】%s 签到出错：%s" % (pt_task, str(e)))
+                    log.error("【PT】%s 签到出错：%s - %s" % (pt_task, str(e), traceback.format_exc()))
         if status:
             self.message.sendmsg(title="\n".join(status))
 
@@ -129,7 +130,7 @@ class Sites:
         解析上传量
         """
         html_text = self.__prepare_html_text(html_text)
-        upload_match = re.search(r"[^总]上[传傳]量[:：<>/a-zA-Z-=\"'\s#;]+([0-9,.\s]+[KMGTP]*B)", html_text)
+        upload_match = re.search(r"[^总]上[传傳]量[:：<>/a-zA-Z-=\"'\s#;]+([0-9,.\s]+[KMGTPI]*B)", html_text, re.IGNORECASE)
         if upload_match:
             return num_filesize(upload_match.group(1).strip())
         else:
@@ -140,7 +141,7 @@ class Sites:
         解析下载量
         """
         html_text = self.__prepare_html_text(html_text)
-        download_match = re.search(r"[^总]下[载載]量[:：<>/a-zA-Z-=\"'\s#;]+([0-9,.\s]+[KMGTP]*B)", html_text)
+        download_match = re.search(r"[^总]下[载載]量[:：<>/a-zA-Z-=\"'\s#;]+([0-9,.\s]+[KMGTPI]*B)", html_text, re.IGNORECASE)
         if download_match:
             return num_filesize(download_match.group(1).strip())
         else:

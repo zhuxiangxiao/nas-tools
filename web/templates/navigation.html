@@ -4,6 +4,7 @@
     <meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
     <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
+    <meta name="referrer" content="never">
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="Robots" content="noindex,nofollow,noarchive">
     <meta content="default" name="apple-mobile-web-app-status-bar-style" />
@@ -480,7 +481,7 @@
             }
           }
         });
-        $("#navbar-menu").collapse('hide')
+        $("#navbar-menu").collapse('hide');
         $("#modal-wait").modal("show");
         page = page.replaceAll(" ", "%20");
         $("#page_content").load(page, {}, function(response,status,xhr){
