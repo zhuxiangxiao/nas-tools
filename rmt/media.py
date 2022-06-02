@@ -110,8 +110,6 @@ class Media:
         if not file_media_name:
             log.error("【META】识别关键字有误！")
             return None
-        if not is_chinese(file_media_name) and len(file_media_name) < 3:
-            return None
         if language:
             self.tmdb.language = language
         else:
@@ -374,7 +372,7 @@ class Media:
                     meta_info.set_tmdb_info(self.meta.get_meta_data_by_key(media_key))
                 # 自带TMDB信息
                 else:
-                    meta_info = MetaInfo(file_name, mtype=MediaType.ANIME)
+                    meta_info = MetaInfo(file_name, mtype=media_type)
                     meta_info.set_tmdb_info(tmdb_info)
                     meta_info.type = media_type
                     if season and media_type != MediaType.MOVIE:
