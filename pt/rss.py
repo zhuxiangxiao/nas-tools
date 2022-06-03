@@ -1,3 +1,4 @@
+import re
 import traceback
 from threading import Lock
 
@@ -117,6 +118,8 @@ class Rss:
                         log.info("【RSS】开始处理：%s" % torrent_name)
                         # 识别种子名称，开始检索TMDB
                         media_info = self.media.get_media_info(title=torrent_name, subtitle=description)
+                        if not media_info or not media_info.tmdb_info:
+                            media_info = self.media.get_media_info(title=re.sub('[\u4e00-\u9fa5]', '', torrent_name), subtitle=description)
                         if not media_info or not media_info.tmdb_info:
                             log.info("【RSS】%s 未查询到媒体信息" % torrent_name)
                             continue
