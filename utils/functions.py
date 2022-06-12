@@ -9,7 +9,9 @@ import platform
 import bisect
 import datetime
 from enum import Enum
+from functools import lru_cache
 
+import requests
 from utils.types import OsType
 
 INSTANCES = {}
@@ -93,12 +95,22 @@ def str_timelong(time_sec):
     return str(round(time_sec / (b + 1))) + u
 
 
-# 判断是否为中文
+# 判断是否含有中文
 def is_chinese(word):
     for ch in word:
         if '\u4e00' <= ch <= '\u9fff':
             return True
     return False
+
+
+# 判断是否全是中文
+def is_all_chinese(word):
+    for ch in word:
+        if '\u4e00' <= ch <= '\u9fff':
+            continue
+        else:
+            return False
+    return True
 
 
 # 执地本地命令，返回信息
@@ -123,7 +135,7 @@ def system_exec_command(cmd, timeout=60):
 
 
 # 获得目录下的媒体文件列表List，按后缀过滤
-def get_dir_files_by_ext(in_path, exts="", filesize=0):
+def get_dir_files(in_path, exts="", filesize=0, episode_format=None):
     if not in_path:
         return []
     if not os.path.exists(in_path):
@@ -132,22 +144,36 @@ def get_dir_files_by_ext(in_path, exts="", filesize=0):
     if os.path.isdir(in_path):
         for root, dirs, files in os.walk(in_path):
             for file in files:
-                ext = os.path.splitext(file)[-1]
-                if not exts or ext.lower() in exts:
-                    cur_path = os.path.join(root, file)
-                    if is_invalid_path(cur_path):
-                        continue
-                    file_size = os.path.getsize(cur_path)
-                    if cur_path not in ret_list and file_size >= filesize:
-                        ret_list.append(cur_path)
+                cur_path = os.path.join(root, file)
+                # 检查路径是否合法
+                if is_invalid_path(cur_path):
+                    continue
+                # 检查格式匹配
+                if episode_format and not episode_format.match(file):
+                    continue
+                # 检查后缀
+                if exts and os.path.splitext(file)[-1].lower() not in exts:
+                    continue
+                # 检查文件大小
+                if filesize and os.path.getsize(cur_path) < filesize:
+                    continue
+                # 命中
+                if cur_path not in ret_list:
+                    ret_list.append(cur_path)
     else:
+        # 检查路径是否合法
         if is_invalid_path(in_path):
             return []
-        ext = os.path.splitext(in_path)[-1]
-        if not exts or ext.lower() in exts:
-            file_size = os.path.getsize(in_path)
-            if in_path not in ret_list and file_size >= filesize:
-                ret_list.append(in_path)
+        # 检查后缀
+        if exts and os.path.splitext(in_path)[-1].lower() not in exts:
+            return []
+        # 检查格式
+        if episode_format and not episode_format.match(os.path.basename(in_path)):
+            return []
+        # 检查文件大小
+        if filesize and os.path.getsize(in_path) < filesize:
+            return []
+        ret_list.append(in_path)
     return ret_list
 
 
@@ -160,7 +186,7 @@ def get_dir_level1_medias(in_path, exts=""):
         for file in os.listdir(in_path):
             path = os.path.join(in_path, file)
             if os.path.isfile(path):
-                if os.path.splitext(file)[-1].lower() in exts:
+                if not exts or os.path.splitext(file)[-1].lower() in exts:
                     ret_list.append(path)
             else:
                 ret_list.append(path)
@@ -350,15 +376,15 @@ def is_ses_in_ses(sea, epi, season, episode):
 def is_bluray_dir(path):
     if not path:
         return False
-    return os.path.exists(os.path.join(path, "BDMV", "index.bdmv"))
+    if os.path.normpath(path).endswith("BDMV"):
+        return os.path.exists(os.path.join(path, "index.bdmv"))
+    else:
+        return os.path.exists(os.path.join(path, "BDMV", "index.bdmv"))
 
 
 # 转化SQL字符
 def str_sql(in_str):
-    if not in_str:
-        return ""
-    else:
-        return str(in_str)
+    return "" if not in_str else str(in_str)
 
 
 # 将普通对象转化为支持json序列化的对象
@@ -367,6 +393,7 @@ def json_serializable(obj):
     @param obj: 待转化的对象
     @return: 支持json序列化的对象
     """
+
     def _try(o):
         if isinstance(o, Enum):
             return o.value
@@ -377,3 +404,29 @@ def json_serializable(obj):
             return str(o)
 
     return json.loads(json.dumps(obj, default=lambda o: _try(o)))
+
+
+# 获取Bing每日避纸
+@lru_cache(maxsize=7)
+def get_bing_wallpaper(today=datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d')):
+    url = "http://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&today=%s" % today
+    try:
+        resp = requests.get(url, timeout=5)
+    except Exception as err:
+        print(str(err))
+        return ""
+    if resp and resp.status_code == 200:
+        for image in resp.json()['images']:
+            return f"https://cn.bing.com{image['url']}"
+    return ""
+
+
+# 检查进程序是否存在
+def check_process(pname):
+    """
+    判断进程是否存在
+    """
+    if not pname:
+        return False
+    text = subprocess.Popen('ps -ef | grep -v grep | grep %s' % pname, shell=True).communicate()
+    return True if text else False

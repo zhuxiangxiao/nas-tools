@@ -1,15 +1,14 @@
 import os
 import re
 import traceback
-import parse
-
 import log
-from config import Config, SPLIT_CHARS
+from config import Config
 from rmt.metainfo import MetaInfo
 from rmt.tmdbv3api import TMDb, Search, Movie, TV
 from utils.functions import xstr
 from utils.meta_helper import MetaHelper
 from utils.types import MediaType, MatchMode
+from utils.commons import EpisodeFormat
 
 
 class Media:
@@ -62,14 +61,16 @@ class Media:
             return False
         if not isinstance(tmdb_names, list):
             tmdb_names = [tmdb_names]
-        file_name = re.sub(r'\s+', ' ', re.sub(r"%s" % self.__empty_chars, '', re.sub(r"%s" % self.__space_chars, ' ', file_name))).strip().upper()
+        file_name = re.sub(r'\s+', ' ', re.sub(r"%s" % self.__empty_chars, '',
+                                               re.sub(r"%s" % self.__space_chars, ' ', file_name))).strip().upper()
         for tmdb_name in tmdb_names:
-            tmdb_name = re.sub(r'\s+', ' ', re.sub(r"%s" % self.__empty_chars, '', re.sub(r"%s" % self.__space_chars, ' ', tmdb_name))).strip().upper()
+            tmdb_name = re.sub(r'\s+', ' ', re.sub(r"%s" % self.__empty_chars, '',
+                                                   re.sub(r"%s" % self.__space_chars, ' ', tmdb_name))).strip().upper()
             if file_name == tmdb_name:
                 return True
         return False
 
-    def __search_tmdb_names(self, mtype, tmdb_id):
+    def __search_tmdb_names(self, mtype: MediaType, tmdb_id):
         """
         检索tmdb中所有的译名，用于名称匹配
         :param mtype: 类型：电影、电视剧、动漫
@@ -105,7 +106,7 @@ class Media:
     def __search_tmdb(self, file_media_name, first_media_year, search_type,
                       media_year=None, season_number=None, language=None):
         """
-        检索tmdb中的媒体信息
+        检索tmdb中的媒体信息，匹配返回一条尽可能正确的信息
         :param file_media_name: 剑索的名称
         :param first_media_year: 年份，如要是季集需要是首播年份(first_air_date)
         :param media_year: 当前季集年份
@@ -169,8 +170,6 @@ class Media:
         if len(movies) == 0:
             log.warn(f"【META】{file_media_name} 未找到媒体信息!")
             return None
-        elif len(movies) == 1:
-            return movies[0]
         else:
             info = {}
             if first_media_year:
@@ -222,8 +221,6 @@ class Media:
         if len(tvs) == 0:
             log.warn(f"【META】{file_media_name} 未找到媒体信息!")
             return None
-        elif len(tvs) == 1:
-            return tvs[0]
         else:
             info = {}
             if first_media_year:
@@ -264,6 +261,7 @@ class Media:
         :param season_number: 季序号
         :return: 匹配的媒体信息
         """
+
         def __season_match(tmdb_id):
             try:
                 seasons = self.get_tmdb_seasons_info(tmdbid=tmdb_id)
@@ -304,9 +302,9 @@ class Media:
                     return tv
         return {}
 
-    def get_media_info_manual(self, mtype, title, year, tmdbid=None):
+    def get_tmdb_info(self, mtype: MediaType, title, year, tmdbid=None):
         """
-        给定名称和年份或者TMDB号，查询媒体信息
+        给定名称和年份或者TMDB号，查询一条媒体信息
         :param mtype: 类型：电影、电视剧、动漫
         :param title: 标题
         :param year: 年份
@@ -315,8 +313,7 @@ class Media:
         if not tmdbid:
             if not mtype or not title:
                 return None
-            media_info = self.get_media_info(title="%s %s" % (title, year), mtype=mtype, strict=True)
-            tmdb_info = media_info.tmdb_info
+            tmdb_info = self.__search_tmdb(file_media_name=title, first_media_year=year, search_type=mtype)
         else:
             if mtype == MediaType.MOVIE:
                 tmdb_info = self.get_tmdb_movie_info(tmdbid)
@@ -325,6 +322,55 @@ class Media:
         if tmdb_info:
             tmdb_info['media_type'] = mtype
         return tmdb_info
+
+    def search_tmdb_infos(self, title, year=None, mtype: MediaType = None, num=6):
+        """
+        查询名称中有关键字的所有的TMDB信息并返回
+        """
+        if not title:
+            return []
+        if not mtype:
+            results = list(set(self.__search_movie_infos(title, year)).union(set(self.__search_tv_infos(title, year))))
+        elif mtype == MediaType.MOVIE:
+            results = self.__search_movie_infos(title, year)
+        else:
+            results = self.__search_tv_infos(title, year)
+        results = sorted(results, key=lambda x: x.get("release_date") or x.get("first_air_date") or "0000-00-00", reverse=True)
+        return results[:num]
+
+    def __search_movie_infos(self, title, year):
+        """
+        查询模糊匹配的所有电影TMDB信息
+        """
+        if not title:
+            return []
+        ret_infos = []
+        if year:
+            movies = self.search.movies({"query": title, "year": year})
+        else:
+            movies = self.search.movies({"query": title})
+        for movie in movies:
+            if title in movie.get("title"):
+                movie['media_type'] = MediaType.MOVIE
+                ret_infos.append(movie)
+        return ret_infos
+
+    def __search_tv_infos(self, title, year):
+        """
+        查询模糊匹配的所有电视剧TMDB信息
+        """
+        if not title:
+            return []
+        ret_infos = []
+        if year:
+            tvs = self.search.tv_shows({"query": title, "first_air_date_year": year})
+        else:
+            tvs = self.search.tv_shows({"query": title})
+        for tv in tvs:
+            if title in tv.get("name"):
+                tv['media_type'] = MediaType.TV
+                ret_infos.append(tv)
+        return ret_infos
 
     def get_media_info(self, title, subtitle=None, mtype=None, strict=None):
         """
@@ -345,7 +391,8 @@ class Media:
             return None
         if mtype:
             meta_info.type = mtype
-        media_key = "[%s]%s-%s-%s" % (meta_info.type.value, meta_info.get_name(), meta_info.year, meta_info.begin_season)
+        media_key = "[%s]%s-%s-%s" % (
+            meta_info.type.value, meta_info.get_name(), meta_info.year, meta_info.begin_season)
         if not self.meta.get_meta_data_by_key(media_key):
             # 缓存中没有开始查询
             if meta_info.type in [MediaType.TV, MediaType.ANIME]:
@@ -393,14 +440,15 @@ class Media:
         meta_info.set_tmdb_info(self.meta.get_meta_data_by_key(media_key))
         return meta_info
 
-    def get_media_info_on_files(self, file_list, tmdb_info=None, media_type=None, season=None, episode_format=None):
+    def get_media_info_on_files(self, file_list, tmdb_info=None, media_type=None, season=None,
+                                episode_format: EpisodeFormat = None):
         """
         根据文件清单，搜刮TMDB信息，用于文件名称的识别
         :param file_list: 文件清单，如果是列表也可以是单个文件，也可以是一个目录
         :param tmdb_info: 如有传入TMDB信息则以该TMDB信息赋于所有文件，否则按名称从TMDB检索，用于手工识别时传入
         :param media_type: 媒体类型：电影、电视剧、动漫，如有传入以该类型赋于所有文件，否则按名称从TMDB检索并识别
         :param season: 季号，如有传入以该季号赋于所有文件，否则从名称中识别
-        :param episode_format: 手动识别轩发金时传入的集数位置
+        :param episode_format: EpisodeFormat
         :return: 带有TMDB信息的每个文件对应的MetaInfo对象字典
         """
         # 存储文件路径与媒体的对应关系
@@ -430,8 +478,9 @@ class Media:
                         parent_info = MetaInfo(parent_name)
                         if not parent_info.get_name() or not parent_info.year:
                             parent_parent_info = MetaInfo(parent_parent_name)
-                            parent_info.type = parent_parent_info.type if parent_info.type in [MediaType.MOVIE,
-                                                                                               MediaType.UNKNOWN] else parent_info.type
+                            parent_info.type = parent_parent_info.type if parent_parent_info.type and parent_info.type in [
+                                MediaType.MOVIE,
+                                MediaType.UNKNOWN] else parent_info.type
                             parent_info.cn_name = parent_parent_info.cn_name if parent_parent_info.cn_name else parent_info.cn_name
                             parent_info.en_name = parent_parent_info.en_name if parent_parent_info.en_name else parent_info.en_name
                             parent_info.year = parent_parent_info.year if parent_parent_info.year else parent_info.year
@@ -443,7 +492,7 @@ class Media:
                             meta_info.en_name = parent_info.en_name
                         if not meta_info.year:
                             meta_info.year = parent_info.year
-                        if parent_info.type not in [MediaType.MOVIE, MediaType.UNKNOWN] \
+                        if parent_info.type and parent_info.type not in [MediaType.MOVIE, MediaType.UNKNOWN] \
                                 and meta_info.type in [MediaType.MOVIE, MediaType.UNKNOWN]:
                             meta_info.type = parent_info.type
                         if meta_info.type in [MediaType.TV, MediaType.ANIME]:
@@ -481,7 +530,11 @@ class Media:
                     if season and media_type != MediaType.MOVIE:
                         meta_info.begin_season = int(season)
                     if episode_format:
-                        meta_info.begin_episode, meta_info.end_episode = self.split_episode(file_name, episode_format)
+                        begin_ep, end_ep = episode_format.split_episode(file_name)
+                        if begin_ep is not None:
+                            meta_info.begin_episode = begin_ep
+                        if end_ep is not None:
+                            meta_info.end_episode = end_ep
                 return_media_infos[file_path] = meta_info
             except Exception as err:
                 log.error("【RMT】发生错误：%s - %s" % (str(err), traceback.format_exc()))
@@ -528,6 +581,16 @@ class Media:
             return []
         return self.tv.on_the_air(page)
 
+    def get_tmdb_upcoming_movies(self, page):
+        """
+        获取即将上映电影
+        :param page: 第几页
+        :return: TMDB信息列表
+        """
+        if not self.movie:
+            return []
+        return self.movie.upcoming(page)
+
     def get_tmdb_movie_info(self, tmdbid):
         """
         获取电影的详情
@@ -537,7 +600,7 @@ class Media:
         if not self.movie:
             return {}
         try:
-            log.info("【META】正在查询TMDB：%s ..." % tmdbid)
+            log.info("【META】正在查询TMDB电影：%s ..." % tmdbid)
             tmdbinfo = self.movie.details(tmdbid)
             return tmdbinfo
         except Exception as e:
@@ -553,8 +616,25 @@ class Media:
         if not self.tv:
             return {}
         try:
-            log.info("【META】正在查询TMDB：%s ..." % tmdbid)
+            log.info("【META】正在查询TMDB电视剧：%s ..." % tmdbid)
             tmdbinfo = self.tv.details(tmdbid)
+            return tmdbinfo
+        except Exception as e:
+            log.console(str(e))
+            return {}
+
+    def get_tmdb_tv_season_info(self, tmdbid, season):
+        """
+        获取电视剧季的详情
+        :param tmdbid: TMDB ID
+        :param season: 季，数字
+        :return: TMDB信息
+        """
+        if not self.tv:
+            return {}
+        try:
+            log.info("【META】正在查询TMDB电视剧：%s，季：%s ..." % (tmdbid, season))
+            tmdbinfo = self.tv.season_details(tmdbid, season)
             return tmdbinfo
         except Exception as e:
             log.console(str(e))
@@ -614,17 +694,3 @@ class Media:
         if not b:
             return a
         return max(a, b)
-
-    @staticmethod
-    def split_episode(file_name, episode_format):
-        ret = parse.parse(episode_format, file_name)
-        if ret:
-            episodes = ret.__getitem__('episode')
-            episode_splits = list(filter(lambda x: re.compile(r'[a-zA-Z]*\d{1,4}', re.IGNORECASE).match(x), re.split(r'%s' % SPLIT_CHARS, episodes)))
-            if len(episode_splits) == 1:
-                return int(re.compile(r'[a-zA-Z]*', re.IGNORECASE).sub("", episode_splits[0])), None
-            else:
-                return int(re.compile(r'[a-zA-Z]*', re.IGNORECASE).sub("", episode_splits[0])), int(
-                    re.compile(r'[a-zA-Z]*', re.IGNORECASE).sub("", episode_splits[1]))
-        else:
-            return 1, None

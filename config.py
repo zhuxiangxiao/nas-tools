@@ -42,6 +42,8 @@ SYNC_TRANSFER_INTERVAL = 300
 RSS_SEARCH_INTERVAL = 300
 # PT站流量数据刷新时间间隔（小时）
 REFRESH_PT_DATA_INTERVAL = 24
+# 将豆瓣订阅转为TMDB订阅的检查时间间隔（小时）
+RSS_DOUBAN_TO_TMDB_INTEVAL = 12
 # fanart的api，用于拉取封面图片
 FANART_MOVIE_API_URL = 'https://webservice.fanart.tv/v3/movies/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
 FANART_TV_API_URL = 'https://webservice.fanart.tv/v3/tv/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
@@ -51,6 +53,25 @@ LOG_LEVEL = logging.INFO
 LOG_QUEUE = deque(maxlen=200)
 # 添加下载时增加的标签，开始只监控NASTool添加的下载时有效
 PT_TAG = "NASTOOL"
+# 搜索种子过滤属性
+TORRENT_SEARCH_PARAMS = {
+    "restype": {
+        "BLURAY": r"Blu-?Ray|BD|BDRIP",
+        "REMUX": r"REMUX",
+        "DOLBY": r"DOLBY",
+        "WEB": r"WEB-?DL|WEBRIP",
+        "HDTV": r"U?HDTV",
+        "UHD": r"UHD",
+        "HDR": r"HDR",
+        "3D": r"3D"
+    },
+    "pix": {
+        "8k": r"8K",
+        "4k": r"4K|2160K",
+        "1080p": r"1080[PIX]",
+        "720p": r"720P"
+    }
+}
 
 lock = Lock()
 
