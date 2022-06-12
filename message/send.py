@@ -1,4 +1,5 @@
 import re
+from enum import Enum
 
 import log
 from config import Config
@@ -6,6 +7,7 @@ from message.channel.bark import Bark
 from message.channel.serverchan import ServerChan
 from message.channel.telegram import Telegram
 from message.channel.wechat import WeChat
+from rmt.meta.metabase import MetaBase
 from utils.functions import str_filesize
 from utils.sqls import insert_system_message, insert_download_history
 from utils.types import SearchType
@@ -93,14 +95,29 @@ class Message:
         elif channel == SearchType.WX:
             return WeChat().send_msg(title, text, image, url, user_id)
 
-    def send_download_message(self, in_from, can_item):
+    def send_channel_list_msg(self, channel, title, medias: list, user_id=""):
+        """
+        发送列表选择消息
+        :param channel: 消息渠道
+        :param title: 消息标题
+        :param medias: 媒体信息列表
+        :param user_id: 用户ID，如有则只发给这个用户
+        :return: 发送状态、错误信息
+        """
+        if channel == SearchType.TG:
+            return Telegram().send_list_msg(title, medias, user_id)
+        elif channel == SearchType.WX:
+            WeChat().send_msg(title)
+            return WeChat().send_list_msg(medias, self.__domain, user_id)
+
+    def send_download_message(self, in_from: SearchType, can_item: MetaBase):
         """
         发送下载的消息
         :param in_from: 下载来源
         :param can_item: 下载的媒体信息
         :return: 发送状态、错误信息
         """
-        msg_title = can_item.get_title_vote_string()
+        msg_title = can_item.get_title_ep_vote_string()
         msg_text = f"{in_from.value}的{can_item.type.value} {can_item.get_title_string()}{can_item.get_season_episode_string()} 已开始下载"
         if can_item.site:
             msg_text = f"{msg_text}\n站点：{can_item.site}"
@@ -124,7 +141,7 @@ class Message:
         # 登记下载历史
         insert_download_history(can_item)
 
-    def send_transfer_movie_message(self, in_from, media_info, exist_filenum, category_flag):
+    def send_transfer_movie_message(self, in_from: Enum, media_info: MetaBase, exist_filenum, category_flag):
         """
         发送转移电影的消息
         :param in_from: 转移来源
@@ -148,9 +165,10 @@ class Message:
             msg_str = f"{msg_str}，{exist_filenum}个文件已存在"
         self.sendmsg(title=msg_title, text=msg_str, image=media_info.get_message_image(), url='history')
 
-    # 发送转移电视剧/动漫的消息
-    def send_transfer_tv_message(self, message_medias, in_from):
-        # 统计完成情况，发送通知
+    def send_transfer_tv_message(self, message_medias: dict, in_from: Enum):
+        """
+        发送转移电视剧/动漫的消息
+        """
         for item_info in message_medias.values():
             if item_info.total_episodes == 1:
                 msg_title = f"{item_info.get_title_string()} {item_info.get_season_episode_string()} 转移完成"

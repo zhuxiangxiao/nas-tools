@@ -14,7 +14,7 @@ from rmt.media import Media
 from pt.media_server import MediaServer
 from rmt.metainfo import MetaInfo
 from utils.functions import str_timelong
-from utils.types import MediaType, DownloaderType
+from utils.types import MediaType, DownloaderType, SearchType
 
 lock = Lock()
 
@@ -210,7 +210,7 @@ class Downloader:
             return 0, 0
         return self.client.get_pt_data()
 
-    def check_and_add_pt(self, in_from, media_list, need_tvs=None):
+    def check_and_add_pt(self, in_from: SearchType, media_list: list, need_tvs: dict = None):
         """
         根据命中的种子媒体信息，添加下载，由RSS或Searcher调用
         :param in_from: 来源
@@ -326,10 +326,9 @@ class Downloader:
                                 and item.get_season_list()[0] == need_season:
                             log.info("【PT】添加PT任务并暂停：%s ..." % item.org_string)
                             torrent_tag = str(round(datetime.now().timestamp()))
-                            ret = self.add_pt_torrent(url=item.enclosure, mtype=item.type, is_paused=True, tag=torrent_tag)
-                            if ret:
-                                return_items.append(item)
-                            else:
+                            ret = self.add_pt_torrent(url=item.enclosure, mtype=item.type, is_paused=True,
+                                                      tag=torrent_tag)
+                            if not ret:
                                 log.error("【PT】添加下载任务失败：%s" % item.get_title_string())
                                 self.message.sendmsg("添加PT任务失败：%s" % item.get_title_string())
                                 continue
@@ -365,6 +364,8 @@ class Downloader:
                             # 重新开始任务
                             log.info("【PT】%s 开始下载" % item.org_string)
                             self.start_torrents(torrent_id)
+                            # 记录下载项
+                            return_items.append(item)
                             # 发送消息通知
                             self.message.send_download_message(in_from, item)
                             # 清除记忆并退出一层循环
@@ -475,9 +476,8 @@ class Downloader:
                                 return_flag = True
                                 break
                     else:
-                        log.info(
-                            "【PT】%s 第%s季 共%s集 已全部存在" % (meta_info.get_title_string(), season_number, episode_count))
-                        message_list.append("第%s季 共%s集 已全部存在" % (season_number, episode_count))
+                        log.info("【PT】%s 第%s季 共%s集 已全部存在" % (meta_info.get_title_string(), season_number, episode_count))
+                        message_list.append("%s第%s季 共%s集 已全部存在" % (meta_info.get_title_string(), season_number, episode_count))
             else:
                 log.info("【PT】%s 无法查询到媒体详细信息" % meta_info.get_title_string())
                 message_list.append("%s 无法查询到媒体详细信息" % meta_info.get_title_string())
@@ -533,7 +533,8 @@ class Downloader:
                 return []
             for torrent_file in torrent_files:
                 meta_info = MetaInfo(torrent_file.get("name"))
-                if not meta_info.get_episode_list() or not set(meta_info.get_episode_list()).issubset(set(need_episodes)):
+                if not meta_info.get_episode_list() or not set(meta_info.get_episode_list()).issubset(
+                        set(need_episodes)):
                     file_ids.append(torrent_file.get("index"))
                 else:
                     sucess_epidised = list(set(sucess_epidised).union(set(meta_info.get_episode_list())))

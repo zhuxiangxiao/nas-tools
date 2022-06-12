@@ -8,7 +8,7 @@ from config import RMT_MEDIAEXT, Config
 import log
 from rmt.filetransfer import FileTransfer
 from utils.functions import singleton, is_invalid_path, is_path_in_path, is_bluray_dir, get_dir_level1_medias, \
-    get_dir_files_by_ext
+    get_dir_files
 from utils.sqls import is_transfer_in_blacklist, insert_sync_history, is_sync_in_history
 from utils.types import SyncType, OsType
 from watchdog.events import FileSystemEventHandler
@@ -68,6 +68,10 @@ class Sync(object):
                 if not sync_monpath:
                     continue
                 only_link = False
+                enabled = True
+                if sync_monpath.startswith('#'):
+                    enabled = False
+                    sync_monpath = sync_monpath[1:-1]
                 if sync_monpath.startswith('['):
                     only_link = True
                     sync_monpath = sync_monpath[1:-1]
@@ -94,6 +98,9 @@ class Sync(object):
                         log.info("【SYNC】读取到监控目录：%s，目的目录：%s" % (monpath, target_path))
                     else:
                         log.info("【SYNC】读取到监控目录：%s" % monpath)
+                    if not enabled:
+                        log.info("【SYNC】%s 不进行监控和同步：手动关闭" % monpath)
+                        continue
                     if only_link:
                         log.info("【SYNC】%s 不进行识别和重命名" % monpath)
                     if target_path and not os.path.exists(target_path):
@@ -197,9 +204,10 @@ class Sync(object):
                     name = os.path.basename(event_path)
                     if not name:
                         return
-                    ext = os.path.splitext(name)[-1]
-                    if ext.lower() not in RMT_MEDIAEXT:
-                        return
+                    if name.lower() != "index.bdmv":
+                        ext = os.path.splitext(name)[-1]
+                        if ext.lower() not in RMT_MEDIAEXT:
+                            return
                     # 黑名单不处理
                     if is_transfer_in_blacklist(from_dir):
                         return
@@ -248,6 +256,7 @@ class Sync(object):
                     if not is_bluray_dir(path):
                         files = target_info.get('files')
                     else:
+                        path = os.path.dirname(path) if os.path.normpath(path).endswith("BDMV") else path
                         files = []
                     target_path = target_info.get('target')
                     unknown_path = target_info.get('unknown')
@@ -305,7 +314,7 @@ class Sync(object):
             onlylink = target_dirs.get('onlylink')
             # 只做硬链接，不做识别重命名
             if onlylink:
-                for link_file in get_dir_files_by_ext(monpath):
+                for link_file in get_dir_files(monpath):
                     if is_sync_in_history(link_file, target_path):
                         continue
                     log.info("【SYNC】开始同步 %s" % link_file)
