@@ -1,8 +1,8 @@
 from urllib.parse import urlencode
-import requests
 
 from config import Config
 from message.channel.channel import IMessageChannel
+from utils.http_utils import RequestUtils
 
 
 class ServerChan(IMessageChannel):
@@ -40,7 +40,7 @@ class ServerChan(IMessageChannel):
             if not self.__sckey:
                 return False, "参数未配置"
             sc_url = "https://sctapi.ftqq.com/%s.send?%s" % (self.__sckey, urlencode(values))
-            res = requests.get(sc_url, timeout=10)
+            res = RequestUtils().get_res(sc_url)
             if res:
                 ret_json = res.json()
                 errno = ret_json['code']
@@ -53,3 +53,6 @@ class ServerChan(IMessageChannel):
                 return False, "未获取到返回信息"
         except Exception as msg_e:
             return False, str(msg_e)
+
+    def send_list_msg(self, title, medias: list, user_id=""):
+        pass

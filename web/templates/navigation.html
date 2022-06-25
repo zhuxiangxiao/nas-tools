@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=0"/>
     <meta http-equiv="X-UA-Compatible" content="ie=edge"/>
     <meta name="referrer" content="never">
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -15,6 +15,11 @@
     <!-- CSS files -->
     <link href="../static/css/tabler.min.css" rel="stylesheet"/>
     <link href="../static/css/fullcalendar.min.css" rel="stylesheet"/>
+    <style type="text/css">
+      .tooltip-inner {
+        text-align: left;
+      }
+    </style>
   </head>
   <body>
     <div class="page">
@@ -133,6 +138,26 @@
               </div>
             </li>
             {% endif %}
+            {% if "站点管理" in UserPris %}
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false" >
+                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><polyline points="9 11 12 14 20 6" /><path d="M20 12v6a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h9" /></svg>
+                </span>
+                <span class="nav-link-title">
+                  站点管理
+                </span>
+              </a>
+              <div class="dropdown-menu">
+                <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('site')">
+                  站点维护
+                </a>
+                <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('statistics')">
+                  数据统计
+                </a>
+              </div>
+            </li>
+            {% endif %}
             {% if "订阅管理" in UserPris %}
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle" href="#" data-bs-toggle="dropdown" data-bs-auto-close="false" role="button" aria-expanded="false" >
@@ -177,9 +202,6 @@
                 </a>
                 <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('downloaded')">
                   近期下载
-                </a>
-                <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('statistics')">
-                  数据统计
                 </a>
               </div>
             </li>
@@ -255,9 +277,6 @@
                 </a>
                 <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('directorysync')">
                   目录同步
-                </a>
-                <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('site')">
-                  站点
                 </a>
                 <a class="dropdown-item" href="javascript:void(0)" onclick="navmenu('notification')">
                   消息通知
@@ -519,19 +538,20 @@
       <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content">
           <div class="card">
-            <div class="ribbon" id="system_media_vote"></div>
-            <div class="card-body">
-              <div class="row align-items-center">
-                <div class="col-3">
-                  <img src="" class="rounded" id="system_media_poster">
-                </div>
-                <div class="col vtop">
+            <div class="ribbon ribbon-top ribbon-bookmark bg-purple" id="system_media_vote"></div>
+            <div class="row row-0">
+              <div class="col-3 d-none d-lg-block">
+                <img id="system_media_poster" src="" class="w-100 h-100 object-cover">
+              </div>
+              <div class="col">
+                <div class="card-body">
                   <h4 class="card-title mb-3">
                     <a href="#" ><strong id="system_media_name"></strong></a><br/>
                     <span class="text-muted" id="system_release_date"></span>
                   </h4>
-                  <div class="text-muted" id="system_media_overview">
+                  <div class="text-muted mb-3" id="system_media_overview">
                   </div>
+                  <div id="system_sites_info"></div>
                 </div>
               </div>
             </div>
@@ -553,6 +573,7 @@
         </div>
       </div>
     </div>
+    <script src="../static/js/libs/list.min.js"></script>
     <script src="../static/js/jquery-3.3.1.min.js"></script>
     <script src="../static/js/tabler.min.js"></script>
     <script src="../static/js/demo.min.js"></script>
@@ -632,19 +653,24 @@
             $("#system_media_name").text(ret.title);
             $("#system_release_date").text(ret.release_date)
             $("#system_media_poster").attr("src", ret.poster_path);
-            $("#system_media_overview").text(ret.overview);
-            if(parseFloat(ret.vote_average) > 8){
-              $("#system_media_vote").removeClass().addClass("ribbon bg-green");
-            }else if(parseFloat(ret.vote_average) > 6){
-              $("#system_media_vote").removeClass().addClass("ribbon bg-blue");
+            if(ret.overview.length > 200){
+              $("#system_media_overview").text(ret.overview.substr(0, 200) + " ...");
             }else{
-              $("#system_media_vote").removeClass().addClass("ribbon bg-orange");
+              $("#system_media_overview").text(ret.overview);
             }
             if(!ret.vote_average || ret.vote_average == "0"){
               $("#system_media_vote").hide();
             }else{
               $("#system_media_vote").text(ret.vote_average);
               $("#system_media_vote").show();
+            }
+            //附加信息
+            if(ret.site_string){
+              $("#system_sites_info").empty();
+              $("#system_sites_info").append(ret.site_string);
+              $("#system_sites_info").show();
+            }else{
+              $("#system_sites_info").hide();
             }
             //订阅按钮、搜索按钮
             if(ret.rssid){
@@ -661,7 +687,7 @@
               $("#system_media_rss_btn").text("订阅");
               $("#system_media_rss_btn").attr("href", 'javascript:add_rss_media("'+ret.title+'","'+ret.year+'","'+ret.type+'","'+ret.tmdbid+'","'+ret.doubanid+'","'+ret.page+'")');
               $("#system_media_search_btn").text("搜索");
-              $("#system_media_search_btn").attr("href", 'javascript:search_mediainfo_media("'+ret.title+'","'+ret.year+'")');
+              $("#system_media_search_btn").attr("href", 'javascript:search_mediainfo_media("'+ret.title+'")');
               $("#system_media_search_btn").show();
             }
             //详情按钮
@@ -677,6 +703,14 @@
       //隐藏媒体详情
       function hide_mediainfo_modal(){
         $("#system-media-modal").modal("hide");
+      }
+
+      //刷新tooltip
+      function fresh_tooltip(){
+        var tooltipTriggerList = Array.prototype.slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl)
+        });
       }
 
       //导航点击
@@ -698,6 +732,7 @@
         page = page.replaceAll(" ", "%20");
         $("#page_content").load(page, {}, function(response,status,xhr){
           hide_wait_process();
+          fresh_tooltip();
         });
       }
 
@@ -745,9 +780,9 @@
       }
 
       //搜索
-      function search_mediainfo_media(title, year){
+      function search_mediainfo_media(title){
         hide_mediainfo_modal();
-        navmenu('search?s='+title+' '+year+'&f=1');
+        navmenu('search?s='+title+'&f=1');
       }
     </script>
     <script type="text/javascript">
@@ -806,20 +841,10 @@
       function refresh_message(time_str){
         ajax_post("refresh_message", {"lst_time": time_str}, function(ret){
           if(ret.code == 0){
+            lst_time = ret.lst_time;
             var msgs = ret.message;
-            if(msgs.length > 0){
-              var lst_time = msgs[0][4];
-            }else{
-              var lst_time = time_str;
-            }
-            for(var i=msgs.length-1; i>=0; i--){
-              if(msgs[i][1] == "ERROR"){
-                var level = "bg-red";
-              }else{
-                var level = "";
-              }
-              var template = '<div class="list-group-item"><div class="row align-items-center"><div class="col-auto"><span class="status-dot ${LEVEL} d-block"></span></div><div class="col text-truncate"><span class="text-wrap">${TITLE}</span><div class="d-block text-muted text-truncate mt-n1 text-wrap">${CONTENT}</div><div class="d-block text-muted text-truncate mt-n1 text-wrap">${DATE}</div></div></div></div>';
-              $("#system-messages").prepend(template.replace("${LEVEL}", level).replace("${TITLE}", msgs[i][2]).replace("${DATE}", msgs[i][4]).replace("${CONTENT}", msgs[i][3]));
+            for(var i=0; i<msgs.length; i++){
+              $("#system-messages").prepend(msgs[i]);
             }
             setTimeout("refresh_message('" + lst_time + "')", 10000);
           }
@@ -868,6 +893,23 @@
         refresh_message("");
         {% endif %}
       });
+
+      //禁止双指放大
+      document.documentElement.addEventListener('touchstart', function (event) {
+        if (event.touches.length > 1) {
+          event.preventDefault();
+        }
+      }, false);
+
+      //禁止双击放大
+      var lastTouchEnd = 0;
+      document.documentElement.addEventListener('touchend', function (event) {
+        var now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+          event.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, false);
     </script>
   </body>
 </html>

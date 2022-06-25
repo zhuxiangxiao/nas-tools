@@ -3,14 +3,13 @@ import logging
 import os.path
 import traceback
 from math import floor
-from flask import Flask, request, json, render_template, make_response, session
+from flask import Flask, request, json, render_template, make_response, session, send_from_directory
 from flask_login import LoginManager, UserMixin, login_user, login_required, current_user
 from werkzeug.security import check_password_hash
 import xml.dom.minidom
 
 import log
 from pt.sites import Sites
-from rmt.doubanv2api.doubanapi import DoubanApi
 from pt.downloader import Downloader
 from pt.searcher import Searcher
 from rmt.media import Media
@@ -25,6 +24,7 @@ from utils.types import *
 from version import APP_VERSION
 from web.action import WebAction
 from web.backend.douban_hot import DoubanHot
+from web.backend.web_utils import get_random_discover_backdrop
 from web.backend.webhook_event import WebhookEvent
 from utils.WXBizMsgCrypt3 import WXBizMsgCrypt
 
@@ -43,7 +43,7 @@ def create_flask_app(config):
         "id": 0,
         "name": admin_user,
         "password": admin_password[6:],
-        "pris": "我的媒体库,资源搜索,推荐,订阅管理,下载管理,媒体识别,服务,系统设置"
+        "pris": "我的媒体库,资源搜索,推荐,站点管理,订阅管理,下载管理,媒体识别,服务,系统设置"
     }]
 
     App = Flask(__name__)
@@ -150,7 +150,7 @@ def create_flask_app(config):
                 if userid is None or username is None:
                     return render_template('login.html',
                                            GoPage=GoPage,
-                                           BingWallpaper=get_bing_wallpaper())
+                                           LoginWallpaper=get_random_discover_backdrop())
                 else:
                     return render_template('navigation.html',
                                            GoPage=GoPage,
@@ -161,7 +161,7 @@ def create_flask_app(config):
             else:
                 return render_template('login.html',
                                        GoPage=GoPage,
-                                       BingWallpaper=get_bing_wallpaper())
+                                       LoginWallpaper=get_random_discover_backdrop())
 
         else:
             GoPage = request.form.get('next') or ""
@@ -173,13 +173,13 @@ def create_flask_app(config):
             if not username:
                 return render_template('login.html',
                                        GoPage=GoPage,
-                                       BingWallpaper=get_bing_wallpaper(),
+                                       LoginWallpaper=get_random_discover_backdrop(),
                                        err_msg="请输入用户名")
             user_info = get_user(username)
             if not user_info:
                 return render_template('login.html',
                                        GoPage=GoPage,
-                                       BingWallpaper=get_bing_wallpaper(),
+                                       LoginWallpaper=get_random_discover_backdrop(),
                                        err_msg="用户名或密码错误")
             # 创建用户实体
             user = User(user_info)
@@ -198,7 +198,7 @@ def create_flask_app(config):
             else:
                 return render_template('login.html',
                                        GoPage=GoPage,
-                                       BingWallpaper=get_bing_wallpaper(),
+                                       LoginWallpaper=get_random_discover_backdrop(),
                                        err_msg="用户名或密码错误")
 
     # 开始
@@ -370,6 +370,8 @@ def create_flask_app(config):
         MediaPixDict = {}
         # 促销信息
         MediaSPStateDict = {}
+        # 名称
+        MediaNameDict = {}
         # 查询统计值
         for item in res:
             # 资源类型
@@ -405,6 +407,13 @@ def create_flask_app(config):
                 MediaSPStateDict[sp_key] = 1
             else:
                 MediaSPStateDict[sp_key] += 1
+            # 名称
+            if item[1]:
+                name = item[1].split("(")[0].strip()
+                if name not in MediaNameDict:
+                    MediaNameDict[name] = 1
+                else:
+                    MediaNameDict[name] += 1
 
         # 展示类型
         MediaMTypes = []
@@ -429,6 +438,10 @@ def create_flask_app(config):
         # 展示促销
         MediaSPStates = [{"name": k, "num": v} for k, v in MediaSPStateDict.items()]
         MediaSPStates = sorted(MediaSPStates, key=lambda x: int(x.get("num")), reverse=True)
+        # 展示名称
+        MediaNames = []
+        for k, v in MediaNameDict.items():
+            MediaNames.append({"name": k, "num": v})
 
         # 站点列表
         SiteDict = []
@@ -445,6 +458,7 @@ def create_flask_app(config):
                                MediaSites=MediaSites,
                                MediaPixs=MediaPixs,
                                MediaSPStates=MediaSPStates,
+                               MediaNames=MediaNames,
                                MediaRestypes=MediaRestypes,
                                RestypeDict=TORRENT_SEARCH_PARAMS.get("restype").keys(),
                                PixDict=TORRENT_SEARCH_PARAMS.get("pix").keys(),
@@ -454,15 +468,27 @@ def create_flask_app(config):
     @App.route('/movie_rss', methods=['POST', 'GET'])
     @login_required
     def movie_rss():
-        Items = get_rss_movies()
-        return render_template("rss/movie_rss.html", Count=len(Items), Items=Items)
+        RssItems = get_rss_movies()
+        RssSites = get_config_site()
+        SearchSites = [item[1] for item in Searcher().indexer.get_indexers()]
+        return render_template("rss/movie_rss.html",
+                               Count=len(RssItems),
+                               Items=RssItems,
+                               Sites=RssSites,
+                               SearchSites=SearchSites)
 
     # 电视剧订阅页面
     @App.route('/tv_rss', methods=['POST', 'GET'])
     @login_required
     def tv_rss():
-        Items = get_rss_tvs()
-        return render_template("rss/tv_rss.html", Count=len(Items), Items=Items)
+        RssItems = get_rss_tvs()
+        RssSites = get_config_site()
+        SearchSites = [item[1] for item in Searcher().indexer.get_indexers()]
+        return render_template("rss/tv_rss.html",
+                               Count=len(RssItems),
+                               Items=RssItems,
+                               Sites=RssSites,
+                               SearchSites=SearchSites)
 
     # 订阅日历页面
     @App.route('/rss_calendar', methods=['POST', 'GET'])
@@ -471,45 +497,17 @@ def create_flask_app(config):
         Today = datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d')
         RssMovieIds = [movie[2] for movie in get_rss_movies()]
         RssTvItems = [{"id": tv[3], "season": int(str(tv[2]).replace("S", "")), "name": tv[0]} for tv in get_rss_tvs()]
-        Events = []
-        TmdbMovies = Media().get_tmdb_upcoming_movies(1)
-        for movie in TmdbMovies:
-            if movie.get("release_date") and movie.get("id") not in RssMovieIds:
-                year = movie.get("release_date")[0:4]
-                Events.append(
-                    {"type": "电影",
-                     "title": movie.get("title"),
-                     "start": movie.get("release_date"),
-                     "id": movie.get("id"),
-                     "year": year,
-                     "poster": "https://image.tmdb.org/t/p/w500%s" % movie.get('poster_path'),
-                     "vote_average": movie.get("vote_average")})
-        DoubanMovies = DoubanApi().movie_soon(count=50)
-        if DoubanMovies:
-            for movie in DoubanMovies.get("subject_collection_items"):
-                if movie.get("release_date") and "DB:%s" % movie.get("id") not in RssMovieIds:
-                    release_date = "%s-%s" % (datetime.datetime.now().year, movie.get("release_date").replace(".", "-"))
-                    Events.append(
-                        {"type": "电影",
-                         "title": movie.get("title"),
-                         "start": release_date,
-                         "id": "DB:%s" % movie.get("id"),
-                         "year": release_date[0:4],
-                         "poster": movie.get("cover").get("url"),
-                         "vote_average": movie.get("rating").get("value") if movie.get("rating") else "无"})
-
         return render_template("rss/rss_calendar.html",
                                Today=Today,
                                RssMovieIds=RssMovieIds,
-                               RssTvItems=RssTvItems,
-                               Events=Events)
+                               RssTvItems=RssTvItems)
 
     # 站点维护页面
     @App.route('/site', methods=['POST', 'GET'])
     @login_required
     def site():
         CfgSites = get_config_site()
-        return render_template("setting/site.html",
+        return render_template("site/site.html",
                                Sites=CfgSites)
 
     # 推荐页面
@@ -606,7 +604,7 @@ def create_flask_app(config):
                     fav = 0
             image = res.get('poster_path')
             if RecommendType in ['hm', 'nm', 'ht', 'nt']:
-                image = "https://image.tmdb.org/t/p/original/%s" % image
+                image = "https://image.tmdb.org/t/p/original/%s" % image if image else ""
             else:
                 # 替换图片分辨率
                 image = image.replace("s_ratio_poster", "m_ratio_poster")
@@ -701,6 +699,8 @@ def create_flask_app(config):
     @App.route('/statistics', methods=['POST', 'GET'])
     @login_required
     def statistics():
+        # 刷新单个site
+        refresh_site = request.args.getlist("refresh_site")
         # 总上传下载
         TotalUpload = 0
         TotalDownload = 0
@@ -709,6 +709,8 @@ def create_flask_app(config):
         SiteUploads = []
         SiteDownloads = []
         SiteRatios = []
+        # 刷新指定站点
+        Sites().refresh_pt(specify_sites=refresh_site)
         # 站点上传下载
         SiteData = Sites().get_pt_date()
         if isinstance(SiteData, dict):
@@ -733,17 +735,10 @@ def create_flask_app(config):
         # 近期上传下载各站点汇总
         CurrentUpload, CurrentDownload, CurrentSiteLabels, CurrentSiteUploads, CurrentSiteDownloads = get_site_statistics_recent_sites(
             days=7)
-        # 总上传下载历史
-        StatisticsHis = get_site_statistics(days=30)
-        TotalHisLabels = []
-        TotalUploadHis = []
-        TotalDownloadHis = []
-        for his in StatisticsHis:
-            TotalHisLabels.append(his[0])
-            TotalUploadHis.append(round(int(his[1]) / 1024 / 1024 / 1024))
-            TotalDownloadHis.append(round(int(his[2]) / 1024 / 1024 / 1024))
 
-        return render_template("download/statistics.html",
+        # 站点用户数据
+        SiteUserStatistics = get_site_user_statistics()
+        return render_template("site/statistics.html",
                                CurrentDownload=str_filesize(CurrentDownload) + "B",
                                CurrentUpload=str_filesize(CurrentUpload) + "B",
                                TotalDownload=str_filesize(TotalDownload) + "B",
@@ -752,12 +747,10 @@ def create_flask_app(config):
                                SiteUploads=SiteUploads,
                                SiteRatios=SiteRatios,
                                SiteNames=SiteNames,
-                               TotalHisLabels=TotalHisLabels,
-                               TotalUploadHis=TotalUploadHis,
-                               TotalDownloadHis=TotalDownloadHis,
                                CurrentSiteLabels=CurrentSiteLabels,
                                CurrentSiteUploads=CurrentSiteUploads,
-                               CurrentSiteDownloads=CurrentSiteDownloads)
+                               CurrentSiteDownloads=CurrentSiteDownloads,
+                               SiteUserStatistics=SiteUserStatistics)
 
     # 服务页面
     @App.route('/service', methods=['POST', 'GET'])
@@ -1219,6 +1212,11 @@ def create_flask_app(config):
             data = json.loads(data)
         return WebAction().action(cmd, data)
 
+    # 禁止搜索引擎
+    @App.route('/robots.txt', methods=['GET', 'POST'])
+    def robots():
+        return send_from_directory("", "robots.txt")
+
     # 响应企业微信消息
     @App.route('/wechat', methods=['GET', 'POST'])
     def wechat():
@@ -1274,17 +1272,9 @@ def create_flask_app(config):
                 dom_tree = xml.dom.minidom.parseString(sMsg.decode('UTF-8'))
                 root_node = dom_tree.documentElement
                 # 消息类型
-                msg_type_node = root_node.getElementsByTagName("MsgType")
-                if msg_type_node and msg_type_node[0].firstChild:
-                    msg_type = msg_type_node[0].firstChild.data
-                else:
-                    msg_type = None
+                msg_type = tag_value(root_node, "MsgType")
                 # 用户ID
-                user_id_node = root_node.getElementsByTagName("FromUserName")
-                if user_id_node and user_id_node[0].firstChild:
-                    user_id = user_id_node[0].firstChild.data
-                else:
-                    user_id = None
+                user_id = tag_value(root_node, "FromUserName")
                 # 没的消息类型和用户ID的消息不要
                 if not msg_type or not user_id:
                     log.info("收到微信心跳报文...")
@@ -1293,11 +1283,7 @@ def create_flask_app(config):
                 content = ""
                 if msg_type == "event":
                     # 事件消息
-                    event_key_node = root_node.getElementsByTagName("EventKey")
-                    if event_key_node and event_key_node[0].firstChild:
-                        event_key = event_key_node[0].firstChild.data
-                    else:
-                        event_key = None
+                    event_key = tag_value(root_node, "EventKey")
                     if event_key:
                         log.info("点击菜单：%s" % event_key)
                         keys = event_key.split('#')
@@ -1305,12 +1291,7 @@ def create_flask_app(config):
                             content = WECHAT_MENU.get(keys[2])
                 elif msg_type == "text":
                     # 文本消息
-                    content_node = root_node.getElementsByTagName("Content")
-                    if content_node and content_node[0].firstChild:
-                        content = content_node[0].firstChild.data
-                        log.info("消息内容：%s" % content)
-                    else:
-                        content = ""
+                    content = tag_value(root_node, "Content", default="")
                 if content:
                     # 处理消息内容
                     WebAction().handle_message_job(content, SearchType.WX, user_id)
@@ -1319,17 +1300,37 @@ def create_flask_app(config):
                 log.error("微信消息处理发生错误：%s - %s" % (str(err), traceback.format_exc()))
                 return make_response("ok", 200)
 
-    # Emby消息通知
+    # Plex Webhook
+    @App.route('/plex', methods=['POST'])
+    def plex_webhook():
+        if not Security().check_mediaserver_ip(request.remote_addr):
+            log.warn(f"非法IP地址的媒体服务器消息通知：{request.remote_addr}")
+            return 'Reject'
+        request_json = json.loads(request.form.get('payload', {}))
+        log.debug("收到Plex Webhook报文：%s" % str(request_json))
+        WebhookEvent().plex_action(request_json)
+        return 'Success'
+
+    # Emby Webhook
     @App.route('/jellyfin', methods=['POST'])
+    def jellyfin_webhook():
+        if not Security().check_mediaserver_ip(request.remote_addr):
+            log.warn(f"非法IP地址的媒体服务器消息通知：{request.remote_addr}")
+            return 'Reject'
+        request_json = request.get_json()
+        log.debug("收到Jellyfin Webhook报文：%s" % str(request_json))
+        WebhookEvent().jellyfin_action(request_json)
+        return 'Success'
+
     @App.route('/emby', methods=['POST'])
-    def webhook():
+    # Emby Webhook
+    def emby_webhook():
         if not Security().check_mediaserver_ip(request.remote_addr):
             log.warn(f"非法IP地址的媒体服务器消息通知：{request.remote_addr}")
             return 'Reject'
         request_json = json.loads(request.form.get('data', {}))
-        log.debug("收到Webhook报文：%s" % str(request_json))
-        event = WebhookEvent(request_json)
-        event.report_to_discord()
+        log.debug("收到Emby Webhook报文：%s" % str(request_json))
+        WebhookEvent().emby_action(request_json)
         return 'Success'
 
     # Telegram消息
@@ -1352,5 +1353,10 @@ def create_flask_app(config):
     @App.template_filter('b64encode')
     def b64encode(s):
         return base64.b64encode(s.encode()).decode()
+
+    # 站点信息拆分模板过滤器
+    @App.template_filter('rss_sites_string')
+    def rss_sites_string(notes):
+        return WebAction().parse_sites_string(notes)
 
     return App

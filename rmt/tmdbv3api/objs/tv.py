@@ -25,11 +25,13 @@ class TV(TMDb):
         "keywords": "/tv/%s/keywords",
         "watch_providers": "/tv/%s/watch/providers",
         "translations": "/tv/%s/translations",
-        "season_details": "/tv/%s/season/%s"
+        "season_details": "/tv/%s/season/%s",
+        "alternative_titles": "/tv/%s/alternative_titles",
+        "credits": "/tv/%s/credits"
     }
 
     def details(
-        self, show_id, append_to_response="videos,trailers,images,credits,translations"
+        self, show_id, append_to_response="videos,trailers,images,credits,alternative_titles,translations"
     ):
         """
         Get the primary TV show details by id.
@@ -195,3 +197,19 @@ class TV(TMDb):
         :return:
         """
         return AsObj(**self._call(self._urls["season_details"] % (tv_id, season_number), ""))
+
+    def alternative_titles(self, tv_id):
+        """
+        Get all of the alternative titles for a TV show.
+        :param tv_id:
+        :return:
+        """
+        return AsObj(**self._call(self._urls["alternative_titles"] % tv_id, ""))
+
+    def credits(self, tv_id):
+        """
+        Get the cast and crew for a TV show.
+        :param tv_id:
+        :return:
+        """
+        return AsObj(**self._call(self._urls["credits"] % tv_id, ""))

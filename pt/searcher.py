@@ -4,7 +4,6 @@ from message.send import Message
 from pt.downloader import Downloader
 from pt.indexer.jackett import Jackett
 from pt.indexer.prowlarr import Prowlarr
-from pt.torrent import Torrent
 from rmt.media import Media
 from rmt.meta.metabase import MetaBase
 from utils.sqls import delete_all_search_torrents, insert_search_results
@@ -50,12 +49,13 @@ class Searcher:
                                               match_type=match_type,
                                               match_words=match_words)
 
-    def search_one_media(self, media_info: MetaBase, in_from: SearchType, no_exists: dict):
+    def search_one_media(self, media_info: MetaBase, in_from: SearchType, no_exists: dict, sites: list = None):
         """
         只检索和下载一个资源，用于精确检索下载，由微信、Telegram或豆瓣调用
         :param media_info: 已识别的媒体信息
         :param in_from: 搜索渠道
         :param no_exists: 缺失的剧集清单
+        :param sites: 检索哪些站点
         :return: 请求的资源是否全部下载完整
                  请求的资源如果是剧集则返回下载后仍然缺失的季集信息
                  搜索到的结果数量
@@ -64,7 +64,6 @@ class Searcher:
         if not media_info:
             return False, {}, 0, 0
 
-        log.info("【SEARCHER】开始检索 %s ..." % media_info.original_title)
         # 查找的季
         if not media_info.begin_season:
             search_season = None
@@ -74,27 +73,30 @@ class Searcher:
         search_episode = media_info.get_episode_list()
         if search_episode and not search_season:
             search_season = [1]
-        # 用原标题去检索，用原标题及中文标题去匹配，以兼容国外网站
-        media_list = self.search_medias(key_word=media_info.original_title,
+        # 如果原标题是英文：用原标题去检索，用原标题及中文标题去匹配，以兼容国外网站
+        search_title = media_info.original_title if media_info.original_language == "en" else media_info.title
+        match_words = [media_info.title, search_title] if search_title != media_info.title else [media_info.title]
+        log.info("【SEARCHER】开始检索 %s ..." % search_title)
+        media_list = self.search_medias(key_word=search_title,
                                         filter_args={"season": search_season,
                                                      "episode": search_episode,
                                                      "year": media_info.year,
-                                                     "type": media_info.type},
+                                                     "type": media_info.type,
+                                                     "site": sites},
                                         match_type=1,
-                                        match_words=[media_info.title, media_info.original_title])
+                                        match_words=match_words)
         if len(media_list) == 0:
-            log.info("%s 未搜索到任何资源" % media_info.title)
+            log.info("%s 未搜索到任何资源" % search_title)
             return False, no_exists, 0, 0
         else:
             if in_from in [SearchType.WX, SearchType.TG]:
                 # 保存搜索记录
                 delete_all_search_torrents()
                 # 插入数据库
-                save_media_list = Torrent.get_torrents_group_item(media_list)
-                insert_search_results(save_media_list)
+                insert_search_results(media_list)
                 # 微信未开自动下载时返回
                 if not self.__search_auto:
-                    return False, no_exists, len(save_media_list), None
+                    return False, no_exists, len(media_list), None
             # 择优下载
             download_items, left_medias = self.downloader.check_and_add_pt(in_from, media_list, no_exists)
             # 统计下载情况，下全了返回True，没下全返回False

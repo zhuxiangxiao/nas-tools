@@ -2,12 +2,15 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from html import escape
-from logging.handlers import TimedRotatingFileHandler
-from config import LOG_LEVEL, Config, LOG_QUEUE
+from logging.handlers import RotatingFileHandler
+from config import Config
 from utils.sqls import insert_system_message
 
 lock = threading.Lock()
+LOG_QUEUE = deque(maxlen=200)
+LOG_INDEX = 0
 
 
 class Logger:
@@ -15,13 +18,18 @@ class Logger:
     __instance = None
     __config = None
 
+    __loglevels = {
+        "info": logging.INFO,
+        "debug": logging.DEBUG,
+        "error": logging.ERROR
+    }
+
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(level=LOG_LEVEL)
         self.__config = Config()
-        logtype = self.__config.get_config('app').get('logtype')
-        if logtype:
-            logtype = logtype.lower()
+        logtype = self.__config.get_config('app').get('logtype') or "file"
+        loglevel = self.__config.get_config('app').get('loglevel') or "info"
+        self.logger.setLevel(level=self.__loglevels.get(loglevel))
         if logtype == "server":
             logserver = self.__config.get_config('app').get('logserver')
             logip = logserver.split(':')[0]
@@ -32,14 +40,13 @@ class Logger:
             self.logger.addHandler(log_server_handler)
         else:
             # 记录日志到文件
-            logpath = self.__config.get_config('app').get('logpath') or "/config/logs"
+            logpath = self.__config.get_config('app').get('logpath') or ""
             if not os.path.exists(logpath):
                 os.makedirs(logpath)
-            log_file_handler = TimedRotatingFileHandler(filename=os.path.join(logpath, __name__ + ".txt"),
-                                                        when='D',
-                                                        interval=1,
-                                                        backupCount=3,
-                                                        encoding='utf-8')
+            log_file_handler = RotatingFileHandler(filename=os.path.join(logpath, __name__ + ".txt"),
+                                                   maxBytes=5 * 1024 * 1024,
+                                                   backupCount=3,
+                                                   encoding='utf-8')
             log_file_handler.setFormatter(logging.Formatter('%(asctime)s\t%(levelname)s: %(message)s'))
             self.logger.addHandler(log_file_handler)
         # 记录日志到终端
@@ -65,12 +72,18 @@ def debug(text):
 
 
 def info(text):
-    LOG_QUEUE.append(f"{time.strftime('%H:%M:%S',time.localtime(time.time()))} INFO - {escape(text)}")
+    global LOG_INDEX, LOG_QUEUE
+    with lock:
+        LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} INFO - {escape(text)}")
+        LOG_INDEX += 1
     return Logger.get_instance().logger.info(text)
 
 
 def error(text):
-    LOG_QUEUE.append(f"{time.strftime('%H:%M:%S',time.localtime(time.time()))} ERROR - {escape(text)}")
+    global LOG_INDEX, LOG_QUEUE
+    with lock:
+        LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} ERROR - {escape(text)}")
+        LOG_INDEX += 1
     try:
         if text.strip().find("：") != -1:
             title = text.split("：")[0]
@@ -85,10 +98,16 @@ def error(text):
 
 
 def warn(text):
-    LOG_QUEUE.append(f"{time.strftime('%H:%M:%S',time.localtime(time.time()))} WARN - {escape(text)}")
+    global LOG_INDEX, LOG_QUEUE
+    with lock:
+        LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} WARN - {escape(text)}")
+        LOG_INDEX += 1
     return Logger.get_instance().logger.warning(text)
 
 
 def console(text):
-    LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} - {escape(text)}")
+    global LOG_INDEX, LOG_QUEUE
+    with lock:
+        LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} - {escape(text)}")
+        LOG_INDEX += 1
     print(text)

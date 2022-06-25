@@ -9,9 +9,7 @@ import platform
 import bisect
 import datetime
 from enum import Enum
-from functools import lru_cache
 
-import requests
 from utils.types import OsType
 
 INSTANCES = {}
@@ -64,15 +62,15 @@ def num_filesize(text):
     except Exception as e:
         print(str(e))
         return 0
-    if text.find("PB") != -1:
+    if text.find("PB") != -1 or text.find("PIB") != -1:
         size *= 1024 ** 5
-    elif text.find("TB") != -1:
+    elif text.find("TB") != -1 or text.find("TIB") != -1:
         size *= 1024 ** 4
-    elif text.find("GB") != -1:
+    elif text.find("GB") != -1 or text.find("GIB") != -1:
         size *= 1024 ** 3
-    elif text.find("MB") != -1:
+    elif text.find("MB") != -1 or text.find("MIB") != -1:
         size *= 1024 ** 2
-    elif text.find("KB") != -1:
+    elif text.find("KB") != -1 or text.find("KIB") != -1:
         size *= 1024
     return round(size)
 
@@ -406,21 +404,6 @@ def json_serializable(obj):
     return json.loads(json.dumps(obj, default=lambda o: _try(o)))
 
 
-# 获取Bing每日避纸
-@lru_cache(maxsize=7)
-def get_bing_wallpaper(today=datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d')):
-    url = "http://cn.bing.com/HPImageArchive.aspx?format=js&idx=0&n=1&today=%s" % today
-    try:
-        resp = requests.get(url, timeout=5)
-    except Exception as err:
-        print(str(err))
-        return ""
-    if resp and resp.status_code == 200:
-        for image in resp.json()['images']:
-            return f"https://cn.bing.com{image['url']}"
-    return ""
-
-
 # 检查进程序是否存在
 def check_process(pname):
     """
@@ -430,3 +413,43 @@ def check_process(pname):
         return False
     text = subprocess.Popen('ps -ef | grep -v grep | grep %s' % pname, shell=True).communicate()
     return True if text else False
+
+
+def tag_value(tag_item, tag_name, attname="", default=None):
+    """
+    解析XML标签值
+    """
+    tagNames = tag_item.getElementsByTagName(tag_name)
+    if tagNames:
+        if attname:
+            attvalue = tagNames[0].getAttribute(attname)
+            if attvalue:
+                return attvalue
+        else:
+            firstChild = tagNames[0].firstChild
+            if firstChild:
+                return firstChild.data
+    return default
+
+
+def add_node(doc, parent, name, value=None):
+    """
+    添加一个DOM节点
+    """
+    node = doc.createElement(name)
+    parent.appendChild(node)
+    if value is not None:
+        text = doc.createTextNode(str(value))
+        node.appendChild(text)
+    return node
+
+
+def max_ele(a, b):
+    """
+    返回非空最大值
+    """
+    if not a:
+        return b
+    if not b:
+        return a
+    return max(a, b)

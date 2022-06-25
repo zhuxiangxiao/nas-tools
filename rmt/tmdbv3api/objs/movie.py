@@ -37,12 +37,13 @@ class Movie(TMDb):
         "release_dates": "/movie/%s/release_dates",
         "watch_providers": "/movie/%s/watch/providers",
         "translations": "/movie/%s/translations",
+        "discover": "/discover/movie"
     }
 
     def details(
             self,
             movie_id,
-            append_to_response="videos,trailers,images,casts,translations,keywords,release_dates",
+            append_to_response="videos,trailers,images,credits,release_dates,alternative_titles,translations",
     ):
         """
         Get the primary information about a movie.
@@ -57,14 +58,13 @@ class Movie(TMDb):
             )
         )
 
-    def alternative_titles(self, movie_id, country=""):
+    def alternative_titles(self, movie_id):
         """
         Get all of the alternative titles for a movie.
         :param movie_id:
-        :param country:
         :return:
         """
-        return AsObj(**self._call(self._urls["alternative_titles"] % movie_id, "country=" + country))
+        return AsObj(**self._call(self._urls["alternative_titles"] % movie_id, ""))
 
     def changes(self, movie_id, start_date="", end_date="", page=1):
         """
@@ -88,7 +88,7 @@ class Movie(TMDb):
             "changes"
         )
 
-    def credits(self, movie_id):
+    def credidiscoverts(self, movie_id):
         """
         Get the cast and crew for a movie.
         :param movie_id:
@@ -267,8 +267,16 @@ class Movie(TMDb):
 
     def translations(self, movie_id):
         """
-        Get the Watch Providers for a TV show.
+        Get the Watch Providers for a movie.
         :param movie_id:
         :return:
         """
         return AsObj(**self._call(self._urls["translations"] % movie_id, ""))
+
+    def discover(self, page):
+        """
+        Movie discover.
+        :param page:
+        :return:
+        """
+        return AsObj(**self._call(self._urls["discover"], "page=" + str(page)))

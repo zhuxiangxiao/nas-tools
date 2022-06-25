@@ -1,11 +1,9 @@
 from functools import lru_cache
-import requests
-from requests import RequestException
-
 import log
 from config import FANART_TV_API_URL, FANART_MOVIE_API_URL, ANIME_GENREIDS, Config
 from rmt.category import Category
 from utils.functions import is_all_chinese
+from utils.http_utils import RequestUtils
 from utils.types import MediaType
 
 
@@ -43,12 +41,20 @@ class MetaBase(object):
     resource_type = None
     # 识别的分辨率
     resource_pix = None
+    # 视频编码
+    video_encode = None
+    # 音频编码
+    audio_encode = None
     # 二级分类
     category = None
     # TMDB ID
     tmdb_id = 0
+    # 豆瓣 ID
+    douban_id = 0
     # 媒体标题
     title = None
+    # 媒体原语种
+    original_language = None
     # 媒体原发行标题
     original_title = None
     # 媒体年份
@@ -125,6 +131,21 @@ class MetaBase(object):
                 string = "%s %s" % (string, self.get_vote_string())
         return string
 
+    def get_overview_string(self, max_len=140):
+        """
+        返回带限定长度的简介信息
+        :param max_len: 内容长度
+        :return:
+        """
+        if not hasattr(self, "overview"):
+            return ""
+
+        overview = self.overview
+        placeholder = ' ...'
+        max_len = max(len(placeholder), max_len - len(placeholder))
+        overview = (overview[:max_len] + placeholder) if len(overview) > max_len else overview
+        return overview
+
     # 返回季字符串
     def get_season_string(self):
         if self.begin_season is not None:
@@ -148,6 +169,16 @@ class MetaBase(object):
                 return ""
             else:
                 return "S01"
+
+    # 返回begin_season 的数字
+    def get_season_seq(self):
+        if self.begin_season is not None:
+            return str(self.begin_season)
+        else:
+            if self.type == MediaType.MOVIE:
+                return ""
+            else:
+                return "1"
 
     # 返回季的数组
     def get_season_list(self):
@@ -186,6 +217,26 @@ class MetaBase(object):
     def get_episode_items(self):
         return "E%s" % "E".join(str(episode).rjust(2, '0') for episode in self.get_episode_list())
 
+    # 返回单文件多集的集数表达方式，用于支持单文件多集
+    def get_episode_seqs(self):
+        episodes = self.get_episode_list()
+        if episodes:
+            # 集 xx
+            if len(episodes) == 1:
+                return str(episodes[0])
+            else:
+                return "%s-%s" % (episodes[0], episodes[-1])
+        else:
+            return ""
+
+    # 返回begin_episode 的数字
+    def get_episode_seq(self):
+        episodes = self.get_episode_list()
+        if episodes:
+            return str(episodes[0])
+        else:
+            return ""
+
     # 返回季集字符串
     def get_season_episode_string(self):
         if self.type == MediaType.MOVIE:
@@ -212,6 +263,14 @@ class MetaBase(object):
         else:
             return ""
 
+    # 返回视频编码
+    def get_video_encode_string(self):
+        return self.video_encode or ""
+
+    # 返回音频编码
+    def get_audio_encode_string(self):
+        return self.audio_encode or ""
+
     # 返回背景图片地址
     def get_backdrop_path(self, default=True):
         if self.fanart_image:
@@ -225,10 +284,26 @@ class MetaBase(object):
     def get_message_image(self):
         if self.fanart_image:
             return self.fanart_image
+        elif self.backdrop_path:
+            return self.backdrop_path
         elif self.poster_path:
             return self.poster_path
         else:
             return "../static/img/tmdb.webp"
+
+    # 返回促销信息
+    def get_volume_factor_string(self):
+        free_strs = {
+            "1.0 1.0": "普通",
+            "1.0 0.0": "免费",
+            "2.0 1.0": "2X",
+            "2.0 0.0": "2X免费",
+            "1.0 0.5": "50%",
+            "2.0 0.5": "2X 50%",
+            "1.0 0.7": "70%",
+            "1.0 0.3": "30%"
+        }
+        return free_strs.get('%.1f %.1f' % (self.upload_volume_factor, self.download_volume_factor), "普通")
 
     # 是否包含季
     def is_in_season(self, season):
@@ -281,6 +356,7 @@ class MetaBase(object):
         if self.type == MediaType.MOVIE:
             self.title = info.get('title')
             self.original_title = info.get('original_title')
+            self.original_language = info.get('original_language')
             release_date = info.get('release_date')
             if release_date:
                 self.year = release_date[0:4]
@@ -288,6 +364,7 @@ class MetaBase(object):
         else:
             self.title = info.get('name')
             self.original_title = info.get('original_name')
+            self.original_language = info.get('original_language')
             first_air_date = info.get('first_air_date')
             if first_air_date:
                 self.year = first_air_date[0:4]
@@ -295,9 +372,11 @@ class MetaBase(object):
                 self.category = self.category_handler.get_tv_category(info)
             else:
                 self.category = self.category_handler.get_anime_category(info)
-        self.poster_path = "https://image.tmdb.org/t/p/w500%s" % info.get('poster_path') if info.get('poster_path') else ""
+        self.poster_path = "https://image.tmdb.org/t/p/w500%s" % info.get('poster_path') if info.get(
+            'poster_path') else ""
         self.fanart_image = self.get_fanart_image(search_type=self.type, tmdbid=info.get('id'))
-        self.backdrop_path = "https://image.tmdb.org/t/p/w500%s" % info.get('backdrop_path') if info.get('backdrop_path') else ""
+        self.backdrop_path = "https://image.tmdb.org/t/p/w500%s" % info.get('backdrop_path') if info.get(
+            'backdrop_path') else ""
 
     # 整合种了信息
     def set_torrent_info(self,
@@ -337,7 +416,7 @@ class MetaBase(object):
             else:
                 image_url = FANART_TV_API_URL % tmdbid
             try:
-                ret = requests.get(image_url, timeout=10, proxies=cls.proxies)
+                ret = RequestUtils(proxies=cls.proxies).get_res(image_url)
                 if ret:
                     moviethumbs = ret.json().get('moviethumb')
                     if moviethumbs:
@@ -345,8 +424,6 @@ class MetaBase(object):
                         if moviethumb:
                             # 有则返回FanArt的图片
                             return moviethumb
-            except RequestException as e1:
-                log.console(str(e1))
             except Exception as e2:
                 log.console(str(e2))
         if default:

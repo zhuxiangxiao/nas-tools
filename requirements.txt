@@ -20,3 +20,6 @@ ruamel.yaml>=0.17.19
 plexapi>=4.10.1
 python-opensubtitles>=0.6.dev0
 parse>=1.19.0
+bencode.py>=4.0.0
+cacheout>=0.13.1
+cssselect>=1.1.0

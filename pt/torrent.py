@@ -1,19 +1,24 @@
 import re
+from functools import lru_cache
+from urllib import parse
 import cn2an
-
-from utils.functions import str_filesize
+from lxml import etree
+from config import GRAP_FREE_SITES
+from utils.http_utils import RequestUtils
 from utils.types import MediaType
+import bencode
 
 
 class Torrent:
 
     @staticmethod
-    def is_torrent_match_rss(media_info, movie_keys, tv_keys):
+    def is_torrent_match_rss(media_info, movie_keys, tv_keys, site_name):
         """
         判断种子是否命中订阅
         :param media_info: 已识别的种子媒体信息
         :param movie_keys: 电影订阅清单
         :param tv_keys: 电视剧订阅清单
+        :param site_name: 站点名称
         :return: 命中状态
         """
         if media_info.type == MediaType.MOVIE:
@@ -23,6 +28,10 @@ class Torrent:
                 name = key_info[0]
                 year = key_info[1]
                 tmdbid = key_info[2]
+                sites = key_info[4]
+                # 未订阅站点不匹配
+                if sites and sites.find('|') != -1 and site_name not in sites.split('|'):
+                    continue
                 # 有tmdbid时精确匹配
                 if tmdbid:
                     # 匹配名称、年份，年份可以没有
@@ -48,6 +57,10 @@ class Torrent:
                 year = key_info[1]
                 season = key_info[2]
                 tmdbid = key_info[3]
+                sites = key_info[5]
+                # 未订阅站点不匹配
+                if sites and sites.find('|') != -1 and site_name not in sites:
+                    continue
                 # 有tmdbid时精确匹配
                 if tmdbid:
                     # 匹配季，季可以为空
@@ -251,44 +264,6 @@ class Torrent:
         return mtype, key_word, season_num, episode_num, year, content
 
     @staticmethod
-    def get_torrents_group_item(media_list):
-        """
-        种子去重，每一个名称、站点、资源类型 选一个做种人最多的显示
-        """
-        if not media_list:
-            return []
-
-        # 排序函数
-        def get_sort_str(x):
-            # 排序：标题、最优规则、站点、做种
-            return "%s%s%s%s" % (str(x.title).ljust(100, ' '),
-                                 str(x.res_order).rjust(3, '0'),
-                                 str(x.site_order).rjust(3, '0'),
-                                 str(x.seeders).rjust(10, '0'))
-
-        # 匹配的资源中排序分组
-        media_list = sorted(media_list, key=lambda x: get_sort_str(x), reverse=True)
-        # 控重
-        can_download_list_item = []
-        can_download_list = []
-        # 按分组显示
-        for t_item in media_list:
-            if t_item.type == MediaType.TV:
-                media_name = "%s%s%s%s%s" % (t_item.get_title_string(),
-                                             t_item.site,
-                                             t_item.get_resource_type_string(),
-                                             t_item.get_season_episode_string(),
-                                             str_filesize(t_item.size))
-            else:
-                media_name = "%s%s%s%s" % (
-                    t_item.get_title_string(), t_item.site, t_item.get_resource_type_string(),
-                    str_filesize(t_item.size))
-            if media_name not in can_download_list:
-                can_download_list.append(media_name)
-                can_download_list_item.append(t_item)
-        return can_download_list_item
-
-    @staticmethod
     def get_download_list(media_list):
         """
         对媒体信息进行排序、去重
@@ -300,12 +275,12 @@ class Torrent:
         def get_sort_str(x):
             season_len = str(len(x.get_season_list())).rjust(2, '0')
             episode_len = str(len(x.get_episode_list())).rjust(4, '0')
-            # 排序：标题、季集、资源类型、站点、做种
+            # 排序：标题、资源类型、站点、做种、季集
             return "%s%s%s%s%s" % (str(x.title).ljust(100, ' '),
-                                   "%s%s" % (season_len, episode_len),
                                    str(x.res_order).rjust(3, '0'),
                                    str(x.site_order).rjust(3, '0'),
-                                   str(x.seeders).rjust(10, '0'))
+                                   str(x.seeders).rjust(10, '0'),
+                                   "%s%s" % (season_len, episode_len))
 
         # 匹配的资源中排序分组选最好的一个下载
         # 按站点顺序、资源匹配顺序、做种人数下载数逆序排序
@@ -325,3 +300,66 @@ class Torrent:
                 can_download_list.append(media_name)
                 can_download_list_item.append(t_item)
         return can_download_list_item
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def check_torrent_free(torrent_url, cookie):
+        """
+        检验种子是否免费
+        :param torrent_url: 种子的详情页面
+        :param cookie: 站点的Cookie
+        :return: 促销类型 FREE 2XFREE
+        """
+        if not torrent_url:
+            return None
+        url_host = parse.urlparse(torrent_url).netloc
+        if not url_host:
+            return None
+        xpath_strs = GRAP_FREE_SITES.get(url_host)
+        if not xpath_strs:
+            return None
+        res = RequestUtils(cookies=cookie).get_res(url=torrent_url)
+        if res and res.status_code == 200:
+            res.encoding = res.apparent_encoding
+            html_text = res.text
+            if not html_text:
+                return None
+            try:
+                html = etree.HTML(html_text)
+                # 检测2XFREE
+                for xpath_str in xpath_strs.get("2XFREE"):
+                    if html.xpath(xpath_str):
+                        return "2XFREE"
+                # 检测FREE
+                for xpath_str in xpath_strs.get("FREE"):
+                    if html.xpath(xpath_str):
+                        return "FREE"
+            except Exception as err:
+                print(err)
+        return None
+
+    @staticmethod
+    def get_torrent_content(url):
+        """
+        把种子下载到本地，返回种子内容
+        :param url: 种子链接
+        """
+        if not url:
+            return None, "URL为空"
+        try:
+            if url.startswith("magnet:"):
+                return url, "磁力链接"
+            req = RequestUtils().get_res(url=url)
+            if req and req.status_code == 200:
+                if not req.content:
+                    return None, "未下载到种子数据"
+                metadata = bencode.bdecode(req.content)
+                if not metadata or not isinstance(metadata, dict):
+                    return None, "不正确的种子文件"
+                return req.content, ""
+            elif not req:
+                return None, "无法打开链接"
+            else:
+                return None, "状态码：%s" % req.status_code
+        except Exception as err:
+            return None, "%s" % str(err)

@@ -17,7 +17,6 @@ class MetaAnime(MetaBase):
             return
         # 调用第三方模块识别动漫
         try:
-            self.type = MediaType.UNKNOWN
             anitopy_info = anitopy.parse(title)
             if anitopy_info:
                 # 名称
@@ -66,11 +65,11 @@ class MetaAnime(MetaBase):
                     end_season = 0
                 if isinstance(begin_season, str) and begin_season.isdigit():
                     self.begin_season = int(begin_season)
-                    self.type = MediaType.ANIME
+                    self.type = MediaType.TV
                 if isinstance(end_season, str) and end_season.isdigit():
                     if self.begin_season is not None and end_season != self.begin_season:
                         self.end_season = int(end_season)
-                        self.type = MediaType.ANIME
+                        self.type = MediaType.TV
                 # 集号
                 episode_number = anitopy_info.get("episode_number")
                 if isinstance(episode_number, list):
@@ -85,11 +84,11 @@ class MetaAnime(MetaBase):
                     end_episode = 0
                 if isinstance(begin_episode, str) and begin_episode.isdigit():
                     self.begin_episode = int(begin_episode)
-                    self.type = MediaType.ANIME
+                    self.type = MediaType.TV
                 if isinstance(end_episode, str) and end_episode.isdigit():
                     if self.end_episode is not None and end_episode != self.end_episode:
                         self.end_season = int(end_episode)
-                        self.type = MediaType.ANIME
+                        self.type = MediaType.TV
                 # 类型
                 if not self.type:
                     anime_type = anitopy_info.get('anime_type')
@@ -97,12 +96,22 @@ class MetaAnime(MetaBase):
                         anime_type = anime_type[0]
                     if isinstance(anime_type, str):
                         if anime_type.upper() == "TV":
-                            self.type = MediaType.ANIME
+                            self.type = MediaType.TV
                         else:
                             self.type = MediaType.MOVIE
                 # 分辨率
                 self.resource_pix = anitopy_info.get("video_resolution")
                 if isinstance(self.resource_pix, list):
                     self.resource_pix = self.resource_pix[0]
+                # 视频编码
+                self.video_encode = anitopy_info.get("video_term")
+                if isinstance(self.video_encode, list):
+                    self.video_encode = self.video_encode[0]
+                # 音频编码
+                self.audio_encode = anitopy_info.get("audio_term")
+                if isinstance(self.audio_encode, list):
+                    self.audio_encode = self.audio_encode[0]
+            if not self.type:
+                self.type = MediaType.TV
         except Exception as e:
             log.console(str(e))

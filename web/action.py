@@ -1,11 +1,13 @@
 import _thread
 import importlib
 import signal
+from urllib import parse
+
 from flask_login import logout_user
 from werkzeug.security import generate_password_hash
 
 import log
-from config import RMT_MEDIAEXT, LOG_QUEUE, Config
+from config import RMT_MEDIAEXT, Config, GRAP_FREE_SITES
 from message.channel.telegram import Telegram
 from message.channel.wechat import WeChat
 from message.send import Message
@@ -26,6 +28,7 @@ from service.scheduler import Scheduler
 from service.sync import Sync
 from utils.commons import EpisodeFormat
 from utils.functions import *
+from utils.http_utils import RequestUtils
 from utils.meta_helper import MetaHelper
 from utils.sqls import *
 from utils.types import MediaType, SearchType, DownloaderType, SyncType
@@ -75,7 +78,8 @@ class WebAction:
             "refresh_message": self.__refresh_message,
             "delete_tmdb_cache": self.__delete_tmdb_cache,
             "movie_calendar_data": self.__movie_calendar_data,
-            "tv_calendar_data": self.__tv_calendar_data
+            "tv_calendar_data": self.__tv_calendar_data,
+            "modify_tmdb_cache": self.__modify_tmdb_cache
         }
 
     def action(self, cmd, data):
@@ -129,7 +133,7 @@ class WebAction:
                     return
             # 启动服务
             _thread.start_new_thread(command.get("func"), ())
-            Message().send_channel_msg(channel=in_from, title="已启动：%s" % command.get("desp"))
+            Message().send_channel_msg(channel=in_from, title="%s 已启动" % command.get("desp"))
         elif msg.startswith("订阅"):
             # 添加订阅
             _thread.start_new_thread(add_rss_substribe_from_string, (msg, in_from, user_id,))
@@ -267,8 +271,10 @@ class WebAction:
         ident_flag = False if data.get("unident") else True
         filters = data.get("filters")
         if search_word:
-            search_medias_for_web(content=search_word, ident_flag=ident_flag, filters=filters)
-        return {"retcode": 0}
+            ret, ret_msg = search_medias_for_web(content=search_word, ident_flag=ident_flag, filters=filters)
+            if ret != 0:
+                return {"code": ret, "msg": ret_msg}
+        return {"code": 0}
 
     @staticmethod
     def __download(data):
@@ -284,21 +290,32 @@ class WebAction:
                 mtype = MediaType.MOVIE
             else:
                 mtype = MediaType.ANIME
-            Downloader().add_pt_torrent(res[0], mtype)
             msg_item = MetaInfo("%s" % res[8])
-            msg_item.title = res[1]
-            msg_item.vote_average = res[5]
-            msg_item.poster_path = res[6]
             msg_item.type = mtype
-            msg_item.description = res[9]
             msg_item.size = res[10]
-            msg_item.tmdb_id = res[11]
-            msg_item.poster_path = res[12]
-            msg_item.overview = res[13]
             msg_item.enclosure = res[0]
             msg_item.site = res[14]
-            Message().send_download_message(SearchType.WEB, msg_item)
-        return {"retcode": 0}
+            msg_item.upload_volume_factor = float(res[15] or 1.0)
+            msg_item.download_volume_factor = float(res[16] or 1.0)
+            if res[11] and str(res[11]) != "0":
+                msg_item.tmdb_id = res[11]
+                msg_item.title = res[1]
+                msg_item.vote_average = res[5]
+                msg_item.poster_path = res[6]
+                msg_item.description = res[9]
+                msg_item.poster_path = res[12]
+                msg_item.overview = res[13]
+            else:
+                tmdbinfo = Media().get_tmdb_info(mtype=mtype, title=msg_item.get_name(), year=msg_item.year)
+                msg_item.set_tmdb_info(tmdbinfo)
+            # 添加下载
+            ret, ret_msg = Downloader().add_pt_torrent(res[0], mtype)
+            if ret:
+                # 发送消息
+                Message().send_download_message(SearchType.WEB, msg_item)
+            else:
+                return {"retcode": -1, "retmsg": ret_msg}
+        return {"retcode": 0, "retmsg": ""}
 
     @staticmethod
     def __pt_start(data):
@@ -442,17 +459,12 @@ class WebAction:
                                                            tmdb_info=tmdb_info,
                                                            media_type=media_type,
                                                            season=season,
-                                                           episode=(
-                                                               EpisodeFormat(episode_format), need_fix_all,
-                                                               logid),
+                                                           episode=(EpisodeFormat(episode_format), need_fix_all),
                                                            min_filesize=min_filesize
                                                            )
         if succ_flag:
-            if not need_fix_all:
-                if logid:
-                    insert_transfer_blacklist(path)
-                else:
-                    update_transfer_unknown_state(path)
+            if not need_fix_all and not logid:
+                update_transfer_unknown_state(path)
             return {"retcode": 0, "retmsg": "转移成功"}
         else:
             return {"retcode": 2, "retmsg": ret_msg}
@@ -481,7 +493,7 @@ class WebAction:
             media_type = MediaType.MOVIE
         else:
             media_type = MediaType.ANIME
-        tmdb_info = Media().get_tmdb_info(media_type, None, None, tmdbid)
+        tmdb_info = Media().get_tmdb_info(mtype=media_type, tmdbid=tmdbid)
         if not tmdb_info:
             return {"retcode": 1, "retmsg": "识别失败，无法查询到TMDB信息"}
         # 自定义转移
@@ -493,7 +505,7 @@ class WebAction:
                                                            season=season,
                                                            episode=(
                                                                EpisodeFormat(episode_format, episode_details,
-                                                                             episode_offset), False, None),
+                                                                             episode_offset), False),
                                                            min_filesize=min_filesize,
                                                            udf_flag=True)
         if succ_flag:
@@ -544,8 +556,13 @@ class WebAction:
         """
         查询实时日志
         """
-        if LOG_QUEUE:
-            return {"text": "<br/>".join(list(LOG_QUEUE))}
+        if log.LOG_INDEX:
+            if log.LOG_INDEX > len(list(log.LOG_QUEUE)):
+                text = "<br/>".join(list(log.LOG_QUEUE))
+            else:
+                text = "<br/>".join(list(log.LOG_QUEUE)[-log.LOG_INDEX:])
+            log.LOG_INDEX = 0
+            return {"text": text + "<br/>"}
         return {"text": ""}
 
     def __version(self, data):
@@ -556,8 +573,7 @@ class WebAction:
         info = ""
         code = 0
         try:
-            response = requests.get("https://api.github.com/repos/jxxghp/nas-tools/releases/latest", timeout=10,
-                                    proxies=self.config.get_proxies())
+            response = RequestUtils(proxies=self.config.get_proxies()).get_res("https://api.github.com/repos/jxxghp/nas-tools/releases/latest")
             if response:
                 ver_json = response.json()
                 version = ver_json["tag_name"]
@@ -613,11 +629,16 @@ class WebAction:
         查询单个站点信息
         """
         tid = data.get("id")
+        site_free = False
         if tid:
             ret = get_site_by_id(tid)
+            if ret[0][3]:
+                url_host = parse.urlparse(ret[0][3]).netloc
+                if url_host in GRAP_FREE_SITES.keys():
+                    site_free = True
         else:
             ret = []
-        return {"code": 0, "site": ret}
+        return {"code": 0, "site": ret, "site_free": site_free}
 
     @staticmethod
     def __del_site(data):
@@ -814,6 +835,8 @@ class WebAction:
         season = data.get("season")
         match = data.get("match")
         page = data.get("page")
+        sites = data.get("sites")
+        search_sites = data.get("search_sites")
         if name and mtype:
             if mtype in ['nm', 'hm', 'dbom', 'dbhm', 'dbnm', 'MOV']:
                 mtype = MediaType.MOVIE
@@ -825,7 +848,9 @@ class WebAction:
                                                   season=season,
                                                   match=match,
                                                   doubanid=doubanid,
-                                                  tmdbid=tmdbid)
+                                                  tmdbid=tmdbid,
+                                                  sites=sites,
+                                                  search_sites=search_sites)
         return {"code": code, "msg": msg, "page": page, "name": name}
 
     @staticmethod
@@ -855,8 +880,7 @@ class WebAction:
         else:
             return {"retcode": 2, "retmsg": ret_msg}
 
-    @staticmethod
-    def __media_info(data):
+    def __media_info(self, data):
         """
         查询媒体信息
         """
@@ -873,10 +897,11 @@ class WebAction:
             media_type = MediaType.TV
 
         if media_type == MediaType.MOVIE:
+            # 查媒体信息
             if doubanid:
                 link_url = "https://movie.douban.com/subject/%s" % doubanid
                 douban_info = DoubanApi().movie_detail(doubanid)
-                if not douban_info:
+                if not douban_info or douban_info.get("localized_message"):
                     return {"code": 1, "retmsg": "无法查询到豆瓣信息", "link_url": link_url}
                 overview = douban_info.get("intro")
                 poster_path = douban_info.get("cover_url")
@@ -895,6 +920,16 @@ class WebAction:
                 vote_average = tmdb_info.get("vote_average")
                 release_date = tmdb_info.get('release_date')
                 year = release_date[0:4] if release_date else ""
+
+            # 查订阅信息
+            site_string = ""
+            if not rssid:
+                rssid = get_rss_movie_id(title=title, year=year)
+            if rssid:
+                site_string = self.parse_sites_string(get_rss_movie_sites(rssid=rssid))
+
+            # 查下载信息
+
             return {
                 "code": 0,
                 "type": mtype,
@@ -908,13 +943,15 @@ class WebAction:
                 "link_url": link_url,
                 "tmdbid": tmdbid,
                 "doubanid": doubanid,
-                "rssid": rssid or get_rss_movie_id(title=title, year=year)
+                "rssid": rssid,
+                "site_string": site_string
             }
         else:
+            # 查媒体信息
             if doubanid:
                 link_url = "https://movie.douban.com/subject/%s" % doubanid
                 douban_info = DoubanApi().tv_detail(doubanid)
-                if not douban_info:
+                if not douban_info or douban_info.get("localized_message"):
                     return {"code": 1, "retmsg": "无法查询到豆瓣信息", "link_url": link_url}
                 overview = douban_info.get("intro")
                 poster_path = douban_info.get("cover_url")
@@ -933,6 +970,16 @@ class WebAction:
                 vote_average = tmdb_info.get("vote_average")
                 release_date = tmdb_info.get('first_air_date')
                 year = release_date[0:4] if release_date else ""
+
+            # 查订阅信息
+            site_string = ""
+            if not rssid:
+                rssid = get_rss_tv_id(title=title, year=year)
+            if rssid:
+                site_string = self.parse_sites_string(get_rss_tv_sites(rssid=rssid))
+
+            # 查下载信息
+
             return {
                 "code": 0,
                 "type": mtype,
@@ -946,7 +993,8 @@ class WebAction:
                 "link_url": link_url,
                 "tmdbid": tmdbid,
                 "doubanid": doubanid,
-                "rssid": rssid or get_rss_tv_id(title=title, year=year)
+                "rssid": rssid,
+                "site_string": site_string
             }
 
     def __test_connection(self, data):
@@ -1016,7 +1064,26 @@ class WebAction:
         """
         lst_time = data.get("lst_time")
         messages = get_system_messages(lst_time=lst_time)
-        return {"code": 0, "message": messages}
+        message_html = []
+        for message in list(reversed(messages)):
+            lst_time = message[4]
+            level = "bg-red" if message[1] == "ERROR" else ""
+            content = re.sub(r"[#]+", "<br>", re.sub(r"<[^>]+>", "", re.sub(r"<br/?>", "####", message[3], flags=re.IGNORECASE)))
+            message_html.append(f"""
+            <div class="list-group-item">
+              <div class="row align-items-center">
+                <div class="col-auto">
+                  <span class="status-dot {level} d-block"></span>
+                </div>
+                <div class="col text-truncate">
+                  <span class="text-wrap">{message[2]}</span>
+                  <div class="d-block text-muted text-truncate mt-n1 text-wrap">{content}</div>
+                  <div class="d-block text-muted text-truncate mt-n1 text-wrap">{message[4]}</div>
+                </div>
+              </div>
+            </div>
+            """)
+        return {"code": 0, "message": message_html, "lst_time": lst_time}
 
     @staticmethod
     def __delete_tmdb_cache(data):
@@ -1038,7 +1105,7 @@ class WebAction:
             douban_info = DoubanApi().movie_detail(doubanid)
             if not douban_info:
                 return {"code": 1, "retmsg": "无法查询到豆瓣信息"}
-            poster_path = douban_info.get("cover_url")
+            poster_path = douban_info.get("cover_url") or ""
             title = douban_info.get("title")
             vote_average = douban_info.get("rating", {}).get("value") or "无"
             release_date = re.sub(r"\(.*\)", "", douban_info.get("pubdate")[0])
@@ -1055,10 +1122,10 @@ class WebAction:
                         "vote_average": vote_average
                         }
         else:
-            tmdb_info = Media().get_tmdb_info(MediaType.MOVIE, None, None, tid)
+            tmdb_info = Media().get_tmdb_info(mtype=MediaType.MOVIE, tmdbid=tid)
             if not tmdb_info:
                 return {"code": 1, "retmsg": "无法查询到TMDB信息"}
-            poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path')
+            poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path') if tmdb_info.get('poster_path') else ""
             title = tmdb_info.get('title')
             vote_average = tmdb_info.get("vote_average")
             release_date = tmdb_info.get('release_date')
@@ -1088,7 +1155,7 @@ class WebAction:
             douban_info = DoubanApi().tv_detail(doubanid)
             if not douban_info:
                 return {"code": 1, "retmsg": "无法查询到豆瓣信息"}
-            poster_path = douban_info.get("cover_url")
+            poster_path = douban_info.get("cover_url") or ""
             title = douban_info.get("title")
             vote_average = douban_info.get("rating", {}).get("value") or "无"
             release_date = re.sub(r"\(.*\)", "", douban_info.get("pubdate")[0])
@@ -1105,12 +1172,19 @@ class WebAction:
                         "vote_average": vote_average
                         }
         else:
-            tmdb_info = Media().get_tmdb_tv_season_info(tmdbid=tid, season=season)
+            tmdb_info = Media().get_tmdb_tv_season_detail(tmdbid=tid, season=season)
             if not tmdb_info:
                 return {"code": 1, "retmsg": "无法查询到TMDB信息"}
             episode_events = []
             air_date = tmdb_info.get("air_date")
-            poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get("poster_path")
+            if not tmdb_info.get("poster_path"):
+                tv_tmdb_info = Media().get_tmdb_info(mtype=MediaType.TV, tmdbid=tid)
+                if tv_tmdb_info:
+                    poster_path = "https://image.tmdb.org/t/p/w500%s" % tv_tmdb_info.get("poster_path")
+                else:
+                    poster_path = ""
+            else:
+                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get("poster_path")
             year = air_date[0:4] if air_date else ""
             for episode in tmdb_info.get("episodes"):
                 episode_events.append({
@@ -1125,3 +1199,34 @@ class WebAction:
                     "vote_average": episode.get("vote_average") or "无"
                 })
             return {"code": 0, "events": episode_events}
+
+    @staticmethod
+    def __modify_tmdb_cache(data):
+        """
+        修改TMDB缓存的标题
+        """
+        if MetaHelper().modify_meta_data(data.get("key"), data.get("title")):
+            MetaHelper().save_meta_data(force=True)
+        return {"code": 0}
+
+    @staticmethod
+    def parse_sites_string(notes):
+        if not notes:
+            return ""
+        sites = []
+        search_sites = []
+        site_string = ""
+        notes = str(notes).split("#")
+        if len(notes) > 1:
+            if notes[0].find('|') != -1:
+                sites = ['<span class="badge me-1 mb-1 bg-indigo text-white" title="订阅站点">%s</span>' % s for s in notes[0].split('|') if s]
+            search_sites = ['<span class="badge me-1 mb-1 bg-orange text-white" title="搜索站点">%s</span>' % s for s in notes[1].split('|') if s]
+        else:
+            if notes[0].find('|') != -1:
+                sites = ['<span class="badge me-1 mb-1 bg-indigo text-white" title="订阅站点">%s</span>' % s for s in notes[0].split('|') if s]
+        if sites:
+            site_string = "".join(sites)
+        if search_sites:
+            site_string = "%s" % (site_string + "<br>" if site_string else site_string) + "".join(search_sites)
+
+        return site_string

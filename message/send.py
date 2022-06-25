@@ -70,7 +70,10 @@ class Message:
         else:
             url = ""
         insert_system_message(level="INFO", title=title, content=text)
-        return self.client.send_msg(title, text, image, url, user_id)
+        state, ret_msg = self.client.send_msg(title, text, image, url, user_id)
+        if not state:
+            log.error("【MSG】发送消息失败：%s" % ret_msg)
+        return state
 
     def send_channel_msg(self, channel, title, text="", image="", url="", user_id=""):
         """
@@ -91,9 +94,14 @@ class Message:
         else:
             url = ""
         if channel == SearchType.TG:
-            return Telegram().send_msg(title, text, image, url, user_id)
+            state, ret_msg = Telegram().send_msg(title, text, image, url, user_id)
         elif channel == SearchType.WX:
-            return WeChat().send_msg(title, text, image, url, user_id)
+            state, ret_msg = WeChat().send_msg(title, text, image, url, user_id)
+        else:
+            return False
+        if not state:
+            log.error("【MSG】发送消息失败：%s" % ret_msg)
+        return state
 
     def send_channel_list_msg(self, channel, title, medias: list, user_id=""):
         """
@@ -105,10 +113,15 @@ class Message:
         :return: 发送状态、错误信息
         """
         if channel == SearchType.TG:
-            return Telegram().send_list_msg(title, medias, user_id)
+            state, ret_msg = Telegram().send_list_msg(title, medias, user_id)
         elif channel == SearchType.WX:
             WeChat().send_msg(title)
-            return WeChat().send_list_msg(medias, self.__domain, user_id)
+            state, ret_msg = WeChat().send_list_msg(medias, self.__domain, user_id)
+        else:
+            return False
+        if not state:
+            log.error("【MSG】发送消息失败：%s" % ret_msg)
+        return state
 
     def send_download_message(self, in_from: SearchType, can_item: MetaBase):
         """
@@ -131,6 +144,7 @@ class Message:
             msg_text = f"{msg_text}\n大小：{size}"
         if can_item.org_string:
             msg_text = f"{msg_text}\n种子：{can_item.org_string}"
+        msg_text = f"{msg_text}\n促销：{can_item.get_volume_factor_string()}"
         if can_item.description:
             html_re = re.compile(r'<[^>]+>', re.S)
             description = html_re.sub('', can_item.description)
@@ -185,3 +199,9 @@ class Message:
             else:
                 msg_str = f"{msg_str}，共{item_info.total_episodes}集，总大小：{str_filesize(item_info.size)}，来自：{in_from.value}"
             self.sendmsg(title=msg_title, text=msg_str, image=item_info.get_message_image(), url='history')
+
+    def send_download_fail_message(self, item: MetaBase, error_msg):
+        self.sendmsg(
+            title="添加下载任务失败：%s %s" % (item.get_title_string(), item.get_season_episode_string()),
+            text=f"种子：{item.org_string}\n错误信息：{error_msg}",
+            image=item.get_message_image())

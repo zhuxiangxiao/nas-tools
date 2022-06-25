@@ -10,11 +10,16 @@
   .fc-list-event .media_calendar_item_info {
     display: block !important;
   }
+  .fc .fc-list-event:hover td {
+    background-color: rgba(200,200,200,0.1) !important;
+    background-color: var(--fc-list-event-hover-bg-color, rgba(200,200,200,0.1));
+  }
 </style>
 <script type="text/javascript">
   var calendar = new FullCalendar.Calendar(document.getElementById('calendar'), {
     themeSystem: 'bootstrap',
     bootstrapFontAwesome: false,
+    stickyHeaderDates: false,
     fixedWeekCount: false,
     expandRows: true,
     height: 'auto',
@@ -26,10 +31,10 @@
     },
     initialDate: '{{ Today }}',
     navLinks: true,
-    editable: true,
+    editable: false,
     dayMaxEvents: true,
     selectable: false,
-    events: {{ Events| safe }},
+    events: [],
   eventDisplay: 'list-item',
     eventClick: function(info) {
       var eventData = info.event.extendedProps;
@@ -42,11 +47,12 @@
     },
   eventContent: function(info) {
     var eventData = info.event.extendedProps;
-    if (eventData.rssid) {
-      var innerText = '<a class="card card-link" href="javascript:void(0)"><div class="card-status-start bg-green"></div><div class="card-body" style="padding: 0.5rem 1rem"><div class="row"><div class="col-auto rounded" style="width:40px; height:50px; background-image:url(' + eventData.poster + '); background-size:cover;"></div><div class="col media_calendar_item_info d-none d-xl-block"><div class="font-weight-medium" style="white-space:pre-wrap;word-break:break-all;"><strong>' + info.event.title + '</strong></div><div class="text-muted">' + eventData.type + ' 评分: ' + eventData.vote_average + '</div></div></div></div></a>';
-    } else {
-      var innerText = '<a class="card card-link" href="javascript:void(0)"><div class="card-status-start bg-primary"></div><div class="card-body" style="padding: 0.5rem 1rem"><div class="row"><div class="col-auto rounded" style="width:40px; height:50px; background-image:url(' + eventData.poster + '); background-size:cover;"></div><div class="col media_calendar_item_info d-none d-xl-block"><div class="font-weight-medium" style="white-space:pre-wrap;word-break:break-all;"><strong>' + info.event.title + '</strong></div><div class="text-muted">' + eventData.type + ' 评分: ' + eventData.vote_average + '</div></div></div></div></a>';
+    if (eventData.type == '电影') {
+      var border_color = 'bg-green';
+    }else{
+      var border_color = 'bg-primary';
     }
+    var innerText = '<a class="card card-link" href="javascript:void(0)"><div class="card-status-start ' + border_color + '"></div><div class="card-body" style="padding: 0.5rem 1rem"><div class="row"><div class="col-auto rounded" style="width:40px; height:50px; background-image:url(' + eventData.poster + '); background-size:cover;"></div><div class="col media_calendar_item_info d-none d-xl-block"><div class="font-weight-medium" style="white-space:pre-wrap;word-break:break-all;"><strong>' + info.event.title + '</strong></div><div class="text-muted">' + eventData.type + ' 评分: ' + eventData.vote_average + '</div></div></div></div></a>';
     return { html: innerText };
   }
     });
@@ -97,7 +103,6 @@
       });
     }
   };
-
   //拉取订阅电影
   init_rss_movies_event();
   //拉取订阅电视剧

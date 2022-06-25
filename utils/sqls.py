@@ -80,7 +80,7 @@ def insert_search_results(media_items: list):
 
 # 根据ID从数据库中查询检索结果的一条记录
 def get_search_result_by_id(dl_id):
-    sql = "SELECT ENCLOSURE,TITLE,YEAR,SEASON,EPISODE,VOTE,IMAGE,TYPE,TORRENT_NAME,DESCRIPTION,SIZE,TMDBID,POSTER,OVERVIEW,SITE" \
+    sql = "SELECT ENCLOSURE,TITLE,YEAR,SEASON,EPISODE,VOTE,IMAGE,TYPE,TORRENT_NAME,DESCRIPTION,SIZE,TMDBID,POSTER,OVERVIEW,SITE,UPLOAD_VOLUME_FACTOR,DOWNLOAD_VOLUME_FACTOR" \
           " FROM SEARCH_RESULT_INFO" \
           " WHERE ID = ?"
     return select_by_sql(sql, (dl_id,))
@@ -111,12 +111,14 @@ def is_torrent_rssd(media_info: MetaBase):
         return True
     if media_info.type == MediaType.MOVIE:
         sql = "SELECT COUNT(1) FROM RSS_TORRENTS WHERE TITLE = ? AND YEAR = ?"
-        rets = select_by_sql(sql, (str_sql(media_info.title), media_info.year))
+        rets = select_by_sql(sql, (str_sql(media_info.title), str_sql(media_info.year)))
 
     else:
         sql = "SELECT COUNT(1) FROM RSS_TORRENTS WHERE TITLE = ? AND YEAR = ? AND SEASON = ? AND EPISODE = ?"
 
-        rets = select_by_sql(sql, (str_sql(media_info.title), media_info.year, media_info.get_season_string(),
+        rets = select_by_sql(sql, (str_sql(media_info.title),
+                                   str_sql(media_info.year),
+                                   media_info.get_season_string(),
                                    media_info.get_episode_string()))
 
     if rets and rets[0][0] > 0:
@@ -134,36 +136,44 @@ def delete_all_search_torrents():
 def insert_rss_torrents(media_info: MetaBase):
     sql = "INSERT INTO RSS_TORRENTS(TORRENT_NAME, ENCLOSURE, TYPE, TITLE, YEAR, SEASON, EPISODE) " \
           "VALUES (?, ?, ?, ?, ?, ?, ?)"
-    return update_by_sql(sql, (str_sql(media_info.org_string), media_info.enclosure, media_info.type.value,
-                               str_sql(media_info.title), media_info.year,
-                               media_info.get_season_string(), media_info.get_episode_string()))
+    return update_by_sql(sql, (str_sql(media_info.org_string),
+                               media_info.enclosure,
+                               media_info.type.value,
+                               str_sql(media_info.title),
+                               str_sql(media_info.year),
+                               media_info.get_season_string(),
+                               media_info.get_episode_string()))
 
 
 # 将豆瓣的数据插入数据库
 def insert_douban_media_state(media: MetaBase, state):
     if not media.year:
         sql = "DELETE FROM DOUBAN_MEDIAS WHERE NAME = ?"
-        update_by_sql(sql, (media.get_name(),))
+        update_by_sql(sql, (str_sql(media.get_name()),))
     else:
         sql = "DELETE FROM DOUBAN_MEDIAS WHERE NAME = ? AND YEAR = ?"
-        update_by_sql(sql, (media.get_name(), media.year))
+        update_by_sql(sql, (str_sql(media.get_name()), str_sql(media.year)))
 
     sql = "INSERT INTO DOUBAN_MEDIAS(NAME, YEAR, TYPE, RATING, IMAGE, STATE) VALUES (?, ?, ?, ?, ?, ?)"
     # 再插入
-    return update_by_sql(sql, (media.get_name(), media.year, media.type.value, media.vote_average, media.poster_path,
+    return update_by_sql(sql, (str_sql(media.get_name()),
+                               str_sql(media.year),
+                               media.type.value,
+                               media.vote_average,
+                               str_sql(media.poster_path),
                                state))
 
 
 # 标记豆瓣数据的状态
 def update_douban_media_state(media: MetaBase, state):
     sql = "UPDATE DOUBAN_MEDIAS SET STATE = ? WHERE NAME = ? AND YEAR = ?"
-    return update_by_sql(sql, (state, str_sql(media.title), media.year))
+    return update_by_sql(sql, (state, str_sql(media.title), str_sql(media.year)))
 
 
 # 查询未检索的豆瓣数据
 def get_douban_search_state(title, year):
     sql = "SELECT STATE FROM DOUBAN_MEDIAS WHERE NAME = ? AND YEAR = ?"
-    return select_by_sql(sql, (str_sql(title), year))
+    return select_by_sql(sql, (str_sql(title), str_sql(year)))
 
 
 # 查询识别转移记录
@@ -196,10 +206,17 @@ def insert_transfer_history(in_from: Enum, rmt_mode: RmtMode, in_path, dest, med
     sql = "INSERT INTO TRANSFER_HISTORY" \
           "(SOURCE, MODE, TYPE, FILE_PATH, FILE_NAME, TITLE, CATEGORY, YEAR, SE, DEST, DATE)" \
           " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-    return update_by_sql(sql, (
-        in_from.value, rmt_mode.value, media_info.type.value, str_sql(file_path), str_sql(file_name),
-        str_sql(media_info.title),
-        media_info.category, media_info.year, media_info.get_season_string(), dest, timestr))
+    return update_by_sql(sql, (in_from.value,
+                               rmt_mode.value,
+                               media_info.type.value,
+                               str_sql(file_path),
+                               str_sql(file_name),
+                               str_sql(media_info.title),
+                               media_info.category,
+                               str_sql(media_info.year),
+                               media_info.get_season_string(),
+                               dest,
+                               timestr))
 
 
 # 查询识别转移记录
@@ -307,6 +324,11 @@ def is_transfer_in_blacklist(path):
         return True
     else:
         return False
+
+
+# 查询是否为黑名单
+def is_transfer_notin_blacklist(path):
+    return not is_transfer_in_blacklist(path)
 
 
 # 插入黑名单记录
@@ -417,6 +439,17 @@ def get_rss_movie_id(title, year):
     return ""
 
 
+# 获取订阅电影站点
+def get_rss_movie_sites(rssid):
+    if not rssid:
+        return ""
+    sql = "SELECT DESC FROM RSS_MOVIES WHERE ID = ?"
+    ret = select_by_sql(sql, (rssid,))
+    if ret:
+        return ret[0][0]
+    return ""
+
+
 # 更新订阅电影的TMDBID
 def update_rss_movie_tmdbid(rid, tmdbid):
     if not tmdbid:
@@ -438,7 +471,7 @@ def is_exists_rss_movie(title, year):
 
 
 # 新增RSS电影
-def insert_rss_movie(media_info: MetaBase, state='D'):
+def insert_rss_movie(media_info: MetaBase, state='D', sites: list = None, search_sites: list = None):
     if not media_info:
         return False
     if not media_info.title:
@@ -450,7 +483,7 @@ def insert_rss_movie(media_info: MetaBase, state='D'):
                                str_sql(media_info.year),
                                str_sql(media_info.tmdb_id),
                                str_sql(media_info.get_backdrop_path()),
-                               str_sql(media_info.overview),
+                               "|".join(sites or []) + "|#|" + "|".join(search_sites or []),
                                state))
 
 
@@ -463,7 +496,7 @@ def delete_rss_movie(title, year, rssid=None):
         return update_by_sql(sql, (rssid,))
     else:
         sql = "DELETE FROM RSS_MOVIES WHERE NAME = ? AND YEAR = ?"
-        return update_by_sql(sql, (str_sql(title), year))
+        return update_by_sql(sql, (str_sql(title), str_sql(year)))
 
 
 # 更新电影订阅状态
@@ -471,7 +504,7 @@ def update_rss_movie_state(title, year, state):
     if not title:
         return False
     sql = "UPDATE RSS_MOVIES SET STATE = ? WHERE NAME = ? AND YEAR = ?"
-    return update_by_sql(sql, (state, str_sql(title), year))
+    return update_by_sql(sql, (state, str_sql(title), str_sql(year)))
 
 
 # 查询订阅电视剧信息
@@ -501,10 +534,21 @@ def get_rss_tv_id(title, year, season=None):
         return ""
     if season:
         sql = "SELECT ID FROM RSS_TVS WHERE NAME = ? AND YEAR = ? AND SEASON = ?"
-        ret = select_by_sql(sql, (str_sql(title), year, season))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year), season))
     else:
         sql = "SELECT ID FROM RSS_TVS WHERE NAME = ? AND YEAR = ?"
-        ret = select_by_sql(sql, (str_sql(title), year))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year)))
+    if ret:
+        return ret[0][0]
+    return ""
+
+
+# 获取订阅电视剧站点
+def get_rss_tv_sites(rssid):
+    if not rssid:
+        return ""
+    sql = "SELECT DESC FROM RSS_TVS WHERE ID = ?"
+    ret = select_by_sql(sql, (rssid,))
     if ret:
         return ret[0][0]
     return ""
@@ -524,10 +568,10 @@ def is_exists_rss_tv(title, year, season=None):
         return False
     if season:
         sql = "SELECT COUNT(1) FROM RSS_TVS WHERE NAME = ? AND YEAR = ? AND SEASON = ?"
-        ret = select_by_sql(sql, (str_sql(title), year, season))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year), season))
     else:
         sql = "SELECT COUNT(1) FROM RSS_TVS WHERE NAME = ? AND YEAR = ?"
-        ret = select_by_sql(sql, (str_sql(title), year))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year)))
     if ret and ret[0][0] > 0:
         return True
     else:
@@ -535,7 +579,7 @@ def is_exists_rss_tv(title, year, season=None):
 
 
 # 新增RSS电视剧
-def insert_rss_tv(media_info: MetaBase, total, lack=0, state="D"):
+def insert_rss_tv(media_info: MetaBase, total, lack=0, state="D", sites: list = None, search_sites: list = None):
     if not media_info:
         return False
     if not media_info.title:
@@ -543,12 +587,13 @@ def insert_rss_tv(media_info: MetaBase, total, lack=0, state="D"):
     if is_exists_rss_tv(media_info.title, media_info.year, media_info.get_season_string()):
         return True
     sql = "INSERT INTO RSS_TVS(NAME,YEAR,SEASON,TMDBID,IMAGE,DESC,TOTAL,LACK,STATE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
     return update_by_sql(sql, (str_sql(media_info.title),
                                str_sql(media_info.year),
                                media_info.get_season_string(),
                                str_sql(media_info.tmdb_id),
                                str_sql(media_info.get_backdrop_path()),
-                               str_sql(media_info.overview),
+                               "|".join(sites or []) + "|#|" + "|".join(search_sites or []),
                                total,
                                lack,
                                state))
@@ -559,7 +604,7 @@ def update_rss_tv_lack(title, year, season, lack):
     if not title:
         return False
     sql = "UPDATE RSS_TVS SET LACK=? WHERE NAME = ? AND YEAR = ? AND SEASON = ?"
-    return update_by_sql(sql, (lack, str_sql(title), year, season))
+    return update_by_sql(sql, (lack, str_sql(title), str_sql(year), season))
 
 
 # 删除RSS电视剧
@@ -571,7 +616,7 @@ def delete_rss_tv(title, year, season, rssid=None):
         return update_by_sql(sql, (rssid,))
     else:
         sql = "DELETE FROM RSS_TVS WHERE NAME = ? AND YEAR = ? AND SEASON = ?"
-        return update_by_sql(sql, (str_sql(title), year, season))
+        return update_by_sql(sql, (str_sql(title), str_sql(year), season))
 
 
 # 更新电视剧订阅状态
@@ -579,7 +624,7 @@ def update_rss_tv_state(title, year, season, state):
     if not title:
         return False
     sql = "UPDATE RSS_TVS SET STATE = ? WHERE NAME = ? AND YEAR = ? AND SEASON = ?"
-    return update_by_sql(sql, (state, str_sql(title), year, season))
+    return update_by_sql(sql, (state, str_sql(title), str_sql(year), season))
 
 
 # 查询是否存在同步历史记录
@@ -672,12 +717,60 @@ def get_system_messages(num=20, lst_time=None):
         sql = "SELECT ID, LEVEL, TITLE, CONTENT, DATE FROM MESSAGES ORDER BY DATE DESC LIMIT ?"
         return select_by_sql(sql, (num,))
     else:
-        sql = "SELECT ID, LEVEL, TITLE, CONTENT, DATE FROM MESSAGES WHERE DATE > ? ORDER BY DATE"
+        sql = "SELECT ID, LEVEL, TITLE, CONTENT, DATE FROM MESSAGES WHERE DATE > ? ORDER BY DATE DESC"
         return select_by_sql(sql, (lst_time,))
 
 
-# 判断站点数据是否存在
-def is_site_statistics_exists(url, date):
+# 更新站点用户粒度数据
+def update_site_user_statistics(site, username, upload, download, ratio, seeding, leeching, bonus, url, seeding_size=0,
+                                user_level="", join_at=""):
+    if not site or not url:
+        return
+    update_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+    if not is_site_user_statistics_exists(url):
+        sql = "INSERT INTO SITE_USER_STATISTICS(SITE, USERNAME, USER_LEVEL," \
+              " JOIN_AT, UPDATE_AT," \
+              " UPLOAD, DOWNLOAD, RATIO," \
+              " SEEDING, LEECHING, SEEDING_SIZE," \
+              " BONUS," \
+              " URL) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    else:
+        sql = "UPDATE SITE_USER_STATISTICS SET SITE = ?, USERNAME = ?, USER_LEVEL = ?," \
+              " JOIN_AT = ?, UPDATE_AT = ?," \
+              " UPLOAD = ?, DOWNLOAD = ?, RATIO = ?," \
+              " SEEDING = ?, LEECHING = ?, SEEDING_SIZE = ?," \
+              " BONUS = ? WHERE URL = ?"
+
+    return update_by_sql(sql, (
+            str_sql(site), username, user_level, join_at, update_at, upload, download, ratio, seeding, leeching,
+            seeding_size, bonus, url))
+
+
+# 判断站点用户数据是否存在
+def is_site_user_statistics_exists(url):
+    if not url:
+        return False
+    sql = "SELECT COUNT(1) FROM SITE_USER_STATISTICS WHERE URL = ? "
+    ret = select_by_sql(sql, (url,))
+    if ret and ret[0][0] > 0:
+        return True
+    else:
+        return False
+
+
+# 查询站点数据历史
+def get_site_user_statistics(num=100):
+    sql = "SELECT SITE, USERNAME, USER_LEVEL," \
+          " JOIN_AT, UPDATE_AT," \
+          " UPLOAD, DOWNLOAD, RATIO," \
+          " SEEDING, LEECHING, SEEDING_SIZE," \
+          " BONUS, URL" \
+          " FROM SITE_USER_STATISTICS LIMIT ?"
+    return select_by_sql(sql, (num,))
+
+
+# 判断站点历史数据是否存在
+def is_site_statistics_history_exists(url, date):
     if not url or not date:
         return False
     sql = "SELECT COUNT(1) FROM SITE_STATISTICS WHERE URL = ? AND DATE = ?"
@@ -689,11 +782,11 @@ def is_site_statistics_exists(url, date):
 
 
 # 插入站点数据
-def insert_site_statistics(site, upload, download, ratio, url):
+def insert_site_statistics_history(site, upload, download, ratio, url):
     if not site or not url:
         return
     timestr = time.strftime('%Y-%m-%d', time.localtime(time.time()))
-    if not is_site_statistics_exists(url, timestr):
+    if not is_site_statistics_history_exists(url, timestr):
         sql = "INSERT INTO SITE_STATISTICS(SITE, DATE, UPLOAD, DOWNLOAD, RATIO, URL) VALUES (?, ?, ?, ?, ?, ?)"
         return update_by_sql(sql, (str_sql(site), timestr, upload, download, ratio, url))
     else:
@@ -702,7 +795,7 @@ def insert_site_statistics(site, upload, download, ratio, url):
 
 
 # 查询站点数据历史
-def get_site_statistics(days=30):
+def get_site_statistics_history(days=30):
     sql = "SELECT DATE, SUM(UPLOAD), SUM(DOWNLOAD) FROM SITE_STATISTICS GROUP BY DATE ORDER BY DATE ASC LIMIT ?"
     return select_by_sql(sql, (days,))
 
@@ -757,10 +850,10 @@ def is_exists_download_history(title, year, mtype=None):
         return False
     if mtype:
         sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE TITLE = ? AND YEAR = ? AND TYPE = ?"
-        ret = select_by_sql(sql, (str_sql(title), year, mtype))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year), mtype))
     else:
         sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE TITLE = ? AND YEAR = ?"
-        ret = select_by_sql(sql, (str_sql(title), year))
+        ret = select_by_sql(sql, (str_sql(title), str_sql(year)))
     if ret and ret[0][0] > 0:
         return True
     else:
@@ -781,12 +874,12 @@ def insert_download_history(media_info: MetaBase):
                                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
                                    str_sql(media_info.site),
                                    str_sql(media_info.title),
-                                   media_info.year,
+                                   str_sql(media_info.year),
                                    media_info.type.value,))
     else:
         sql = "INSERT INTO DOWNLOAD_HISTORY(TITLE,YEAR,TYPE,TMDBID,VOTE,POSTER,OVERVIEW,TORRENT,ENCLOSURE,DESC,DATE,SITE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         return update_by_sql(sql, (str_sql(media_info.title),
-                                   media_info.year,
+                                   str_sql(media_info.year),
                                    media_info.type.value,
                                    media_info.tmdb_id,
                                    media_info.vote_average,

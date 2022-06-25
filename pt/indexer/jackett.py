@@ -1,9 +1,8 @@
 import re
 
-import requests
-
 from config import Config
 from pt.indexer.indexer import IIndexer
+from utils.http_utils import RequestUtils
 
 
 class Jackett(IIndexer):
@@ -27,7 +26,7 @@ class Jackett(IIndexer):
         if not self.api_key or not self.__indexers:
             return False
         api_url = "%sapi?apikey=%s&t=search&q=%s" % (self.__indexers[0], self.api_key, "ASDFGHJKL")
-        res = requests.get(api_url, timeout=10)
+        res = RequestUtils().get_res(api_url)
         if res and res.status_code == 200:
             if res.text.find("Invalid API Key") == -1:
                 return True
@@ -42,7 +41,7 @@ class Jackett(IIndexer):
         indexers = []
         indexer_id = 0
         for item in self.__indexers:
-            indexer_name = re.search(r'/indexers/([a-zA-Z0-9]+)/results/', item)
+            indexer_name = re.search(r'/indexers/([\s\S]+)/results/', item)
             if indexer_name:
                 indexer_name = indexer_name.group(1)
                 indexer_id += 1
