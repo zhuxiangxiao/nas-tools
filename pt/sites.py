@@ -8,7 +8,8 @@ from message.send import Message
 from pt.siteuserinfo.site_user_info_factory import SiteUserInfoFactory
 from utils.functions import singleton
 from utils.http_utils import RequestUtils
-from utils.sqls import get_config_site, insert_site_statistics_history, update_site_user_statistics
+from utils.sqls import get_config_site, insert_site_statistics_history, update_site_user_statistics, \
+    get_site_statistics_recent_sites, get_site_user_statistics
 
 lock = Lock()
 
@@ -27,6 +28,7 @@ class Sites:
         self.message = Message()
         self.__pt_sites = get_config_site()
         self.__sites_data = {}
+        self.__last_update_time = None
 
     def refresh_all_pt_data(self, force=False, specify_sites=None):
         """
@@ -61,18 +63,10 @@ class Sites:
         :param site_info:
         :return:
         """
-        if not site_info:
-            return
-        site_name = site_info[1]
-        site_url = site_info[4]
-        if not site_url and site_info[3]:
-            site_url = site_info[3]
+        site_name, site_url, site_cookie = self.parse_site_config(site_info)
         if not site_url:
             return
-        split_pos = str(site_url).rfind("/")
-        if split_pos != -1 and split_pos > 8:
-            site_url = site_url[:split_pos]
-        site_cookie = str(site_info[5])
+
         try:
             site_user_info = SiteUserInfoFactory.build(url=site_url, site_name=site_name, site_cookie=site_cookie)
             if site_user_info:
@@ -84,11 +78,19 @@ class Sites:
                 if not self.__sites_data.get(site_name):
                     self.__sites_data[site_name] = {"upload": site_user_info.upload,
                                                     "download": site_user_info.download,
-                                                    "ratio": site_user_info.ratio}
+                                                    "ratio": site_user_info.ratio,
+                                                    "seeding_size": site_user_info.seeding_size,
+                                                    "seeding": site_user_info.seeding,
+                                                    "leeching": site_user_info.leeching,
+                                                    "bonus": site_user_info.bonus}
                     # 登记历史数据
                     insert_site_statistics_history(site=site_name, upload=site_user_info.upload,
+                                                   user_level=site_user_info.user_level,
                                                    download=site_user_info.download,
                                                    ratio=site_user_info.ratio,
+                                                   seeding=site_user_info.seeding,
+                                                   seeding_size=site_user_info.seeding_size,
+                                                   leeching=site_user_info.leeching, bonus=site_user_info.bonus,
                                                    url=site_url)
                     # 实时用户数据
                     update_site_user_statistics(site=site_name, username=site_user_info.username,
@@ -100,6 +102,28 @@ class Sites:
                                                 url=site_url)
         except Exception as e:
             log.error("【PT】站点 %s 获取流量数据失败：%s - %s" % (site_name, str(e), traceback.format_exc()))
+
+    @staticmethod
+    def parse_site_config(site_info):
+        """
+        解析site配置
+        :param site_info:
+        :return: site_name, site_url, site_cookie
+        """
+        if not site_info:
+            return None, None, None
+
+        site_name = site_info[1]
+        site_url = site_info[4]
+        if not site_url and site_info[3]:
+            site_url = site_info[3]
+        if not site_url:
+            return site_name, None, None
+        split_pos = str(site_url).rfind("/")
+        if split_pos != -1 and split_pos > 8:
+            site_url = site_url[:split_pos]
+        site_cookie = str(site_info[5])
+        return site_name, site_url, site_cookie
 
     def signin(self):
         """
@@ -154,6 +178,31 @@ class Sites:
         """
         self.refresh_all_pt_data()
         return self.__sites_data
+
+    def get_pt_site_statistics_history(self, days=7):
+        """
+        获取PT站上传下载量
+        """
+        site_urls = []
+        for site in self.__pt_sites:
+            _, url, _ = self.parse_site_config(site)
+            if url:
+                site_urls.append(url)
+
+        return get_site_statistics_recent_sites(days=days, strict_urls=site_urls)
+
+    def get_pt_site_user_statistics(self):
+        """
+        获取PT站用户数据
+        :return:
+        """
+        site_urls = []
+        for site in self.__pt_sites:
+            _, url, _ = self.parse_site_config(site)
+            if url:
+                site_urls.append(url)
+
+        return get_site_user_statistics(strict_urls=site_urls)
 
     def refresh_pt(self, specify_sites=None):
         """

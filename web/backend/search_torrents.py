@@ -7,19 +7,21 @@ from pt.torrent import Torrent
 from rmt.media import Media
 from rmt.meta.metabase import MetaBase
 from rmt.metainfo import MetaInfo
-from utils.sqls import insert_search_results, delete_all_search_torrents, insert_rss_tv, insert_rss_movie
+from utils.sqls import insert_search_results, delete_all_search_torrents
 from utils.types import SearchType, MediaType
 from web.backend.subscribe import add_rss_subscribe
 
 SEARCH_MEDIA_CACHE = []
 
 
-def search_medias_for_web(content, ident_flag=True, filters=None):
+def search_medias_for_web(content, ident_flag=True, filters=None, tmdbid=None, media_type=None):
     """
     WEB资源搜索
     :param content: 关键字文本，可以包括 类型、标题、季、集、年份等信息，使用 空格分隔，也支持种子的命名格式
     :param ident_flag: 是否进行媒体信息识别
     :param filters: 其它过滤条件
+    :param tmdbid: TMDBID
+    :param media_type: 媒体类型，配合tmdbid传入
     :return: 错误码，错误原因，成功时直接插入数据库
     """
     mtype, key_word, season_num, episode_num, year, content = Torrent.get_keyword_from_string(content)
@@ -30,7 +32,11 @@ def search_medias_for_web(content, ident_flag=True, filters=None):
     # 识别媒体
     match_words = None
     if ident_flag:
-        media_info = Media().get_media_info(mtype=mtype, title=content)
+        if tmdbid:
+            media_info = MetaInfo(mtype=media_type or mtype, title=content)
+            media_info.set_tmdb_info(Media().get_tmdb_info(mtype=media_type or mtype, tmdbid=tmdbid))
+        else:
+            media_info = Media().get_media_info(mtype=media_type or mtype, title=content)
         if not media_info or not media_info.tmdb_info:
             return -1, "%s 查询不到媒体信息，请确认名称是否正确！" % content
         # 查找的季
@@ -42,9 +48,16 @@ def search_medias_for_web(content, ident_flag=True, filters=None):
         search_episode = media_info.get_episode_list()
         if search_episode and not search_season:
             search_season = [1]
-        # 如果原标题是英文：用原标题去检索，用原标题及中文标题去匹配，以兼容国外网站
-        key_word = media_info.original_title if media_info.original_language == "en" else media_info.title
+        # 如果原标题是英文：用原标题去检索，否则使用英文+原标题搜索去匹配，优化小语种资源
+        key_word = media_info.title
+        if media_info.original_language != "en":
+            en_info = Media().get_tmdb_info(mtype=media_info.type, tmdbid=media_info.tmdb_id, language="en-US")
+            if en_info:
+                key_word = en_info.get("title") if media_info.type == MediaType.MOVIE else en_info.get("name")
+        else:
+            key_word = media_info.original_title
         match_words = [media_info.title, key_word] if key_word != media_info.title else [media_info.title]
+
         filter_args = {"season": search_season,
                        "episode": search_episode,
                        "year": media_info.year,
@@ -148,11 +161,12 @@ def search_media_by_message(input_str, in_from: SearchType, user_id=None):
 def __search_media(in_from, media_info: MetaBase, user_id):
     # 检查是否存在，电视剧返回不存在的集清单
     exist_flag, no_exists, messages = Downloader().check_exists_medias(meta_info=media_info)
-    # 已经存在
-    if exist_flag:
+    if messages:
         Message().send_channel_msg(channel=in_from,
                                    title="\n".join(messages),
                                    user_id=user_id)
+    # 已经存在
+    if exist_flag:
         return
     # 开始检索
     Message().send_channel_msg(channel=in_from,

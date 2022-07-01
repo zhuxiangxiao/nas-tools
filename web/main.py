@@ -464,6 +464,29 @@ def create_flask_app(config):
                                PixDict=TORRENT_SEARCH_PARAMS.get("pix").keys(),
                                SiteDict=SiteDict)
 
+    # 媒体列表页面
+    @App.route('/medialist', methods=['POST', 'GET'])
+    @login_required
+    def medialist():
+        # 查询结果
+        SearchWord = request.args.get("s")
+        NeedSearch = request.args.get("f")
+        OperType = request.args.get("t")
+        medias = []
+        if SearchWord and NeedSearch:
+            meta_info = MetaInfo(title=SearchWord)
+            tmdbinfos = Media().get_tmdb_infos(title=meta_info.get_name(), year=meta_info.year, num=20)
+            for tmdbinfo in tmdbinfos:
+                tmp_info = MetaInfo(title=SearchWord)
+                tmp_info.set_tmdb_info(tmdbinfo)
+                medias.append(tmp_info)
+        return render_template("medialist.html",
+                               SearchWord=SearchWord or "",
+                               NeedSearch=NeedSearch or "",
+                               OperType=OperType or "search",
+                               Count=len(medias),
+                               Medias=medias)
+
     # 电影订阅页面
     @App.route('/movie_rss', methods=['POST', 'GET'])
     @login_required
@@ -475,7 +498,10 @@ def create_flask_app(config):
                                Count=len(RssItems),
                                Items=RssItems,
                                Sites=RssSites,
-                               SearchSites=SearchSites)
+                               SearchSites=SearchSites,
+                               RestypeDict=TORRENT_SEARCH_PARAMS.get("restype").keys(),
+                               PixDict=TORRENT_SEARCH_PARAMS.get("pix").keys()
+                               )
 
     # 电视剧订阅页面
     @App.route('/tv_rss', methods=['POST', 'GET'])
@@ -488,7 +514,10 @@ def create_flask_app(config):
                                Count=len(RssItems),
                                Items=RssItems,
                                Sites=RssSites,
-                               SearchSites=SearchSites)
+                               SearchSites=SearchSites,
+                               RestypeDict=TORRENT_SEARCH_PARAMS.get("restype").keys(),
+                               PixDict=TORRENT_SEARCH_PARAMS.get("pix").keys()
+                               )
 
     # 订阅日历页面
     @App.route('/rss_calendar', methods=['POST', 'GET'])
@@ -496,7 +525,7 @@ def create_flask_app(config):
     def rss_calendar():
         Today = datetime.datetime.strftime(datetime.datetime.now(), '%Y-%m-%d')
         RssMovieIds = [movie[2] for movie in get_rss_movies()]
-        RssTvItems = [{"id": tv[3], "season": int(str(tv[2]).replace("S", "")), "name": tv[0]} for tv in get_rss_tvs()]
+        RssTvItems = [{"id": tv[3], "season": int(str(tv[2]).replace("S", "")), "name": tv[0]} for tv in get_rss_tvs() if tv[2]]
         return render_template("rss/rss_calendar.html",
                                Today=Today,
                                RssMovieIds=RssMovieIds,
@@ -704,6 +733,8 @@ def create_flask_app(config):
         # 总上传下载
         TotalUpload = 0
         TotalDownload = 0
+        TotalSeedingSize = 0
+        TotalSeeding = 0
         # 站点标签及上传下载
         SiteNames = []
         SiteUploads = []
@@ -720,6 +751,8 @@ def create_flask_app(config):
                 up = data.get("upload") or 0
                 dl = data.get("download") or 0
                 ratio = data.get("ratio") or 0
+                seeding = data.get("seeding") or 0
+                seeding_size = data.get("seeding_size") or 0
                 if not up and not dl and not ratio:
                     continue
                 if not str(up).isdigit() or not str(dl).isdigit():
@@ -728,21 +761,26 @@ def create_flask_app(config):
                     SiteNames.append(name)
                     TotalUpload += int(up)
                     TotalDownload += int(dl)
-                    SiteUploads.append(round(int(up) / 1024 / 1024 / 1024))
-                    SiteDownloads.append(round(int(dl) / 1024 / 1024 / 1024))
+                    TotalSeeding += int(seeding)
+                    TotalSeedingSize += int(seeding_size)
+                    SiteUploads.append(int(up))
+                    SiteDownloads.append(int(dl))
                     SiteRatios.append(round(float(ratio), 1))
 
         # 近期上传下载各站点汇总
-        CurrentUpload, CurrentDownload, CurrentSiteLabels, CurrentSiteUploads, CurrentSiteDownloads = get_site_statistics_recent_sites(
-            days=7)
+        CurrentUpload, CurrentDownload, CurrentSiteLabels, CurrentSiteUploads, CurrentSiteDownloads = Sites().get_pt_site_statistics_history(
+            days=2)
 
         # 站点用户数据
-        SiteUserStatistics = get_site_user_statistics()
+        SiteUserStatistics = Sites().get_pt_site_user_statistics()
+
         return render_template("site/statistics.html",
-                               CurrentDownload=str_filesize(CurrentDownload) + "B",
-                               CurrentUpload=str_filesize(CurrentUpload) + "B",
-                               TotalDownload=str_filesize(TotalDownload) + "B",
-                               TotalUpload=str_filesize(TotalUpload) + "B",
+                               CurrentDownload=CurrentDownload,
+                               CurrentUpload=CurrentUpload,
+                               TotalDownload=TotalDownload,
+                               TotalUpload=TotalUpload,
+                               TotalSeedingSize=TotalSeedingSize,
+                               TotalSeeding=TotalSeeding,
                                SiteDownloads=SiteDownloads,
                                SiteUploads=SiteUploads,
                                SiteRatios=SiteRatios,
@@ -1358,5 +1396,10 @@ def create_flask_app(config):
     @App.template_filter('rss_sites_string')
     def rss_sites_string(notes):
         return WebAction().parse_sites_string(notes)
+
+    # RSS过滤规则拆分模板过滤器
+    @App.template_filter('rss_filter_string')
+    def rss_filter_string(notes):
+        return WebAction().parse_filter_string(notes)
 
     return App

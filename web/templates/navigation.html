@@ -664,14 +664,6 @@
               $("#system_media_vote").text(ret.vote_average);
               $("#system_media_vote").show();
             }
-            //附加信息
-            if(ret.site_string){
-              $("#system_sites_info").empty();
-              $("#system_sites_info").append(ret.site_string);
-              $("#system_sites_info").show();
-            }else{
-              $("#system_sites_info").hide();
-            }
             //订阅按钮、搜索按钮
             if(ret.rssid){
               $("#system_media_rss_btn").text("取消订阅");
@@ -733,6 +725,9 @@
         $("#page_content").load(page, {}, function(response,status,xhr){
           hide_wait_process();
           fresh_tooltip();
+          if($("#page_content").find("title").first().text() == "登录 - NASTool"){
+            window.location.reload();
+          }
         });
       }
 
@@ -871,7 +866,7 @@
              if(!$(this).val()){
                return;
              }
-             navmenu('search?s='+$(this).val()+'&f=1');
+             navmenu('medialist?s='+$(this).val()+'&f=1');
              $(this).val('');
            }
         });

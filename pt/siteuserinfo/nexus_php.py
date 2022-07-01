@@ -31,6 +31,8 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
             self.username = user_name.group(1).strip()
             return
         html = etree.HTML(html_text)
+        if not html:
+            return
         ret = html.xpath('//a[contains(@href, "userdetails")]//b//text()')
         if ret:
             self.username = str(ret[-1])
@@ -56,15 +58,12 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
         ratio_match = re.search(r"分享率[:：<>/a-zA-Z-=\"'\s#;]+([0-9.\s]+)", html_text)
         self.ratio = float(ratio_match.group(1).strip()) if (ratio_match and ratio_match.group(1).strip()) else 0.0
 
-        seeding_match = re.search(r"(Torrents seeding|做种中)[\u4E00-\u9FA5\D\s]+(\d+)[\s\S]+<", html_text)
-        self.seeding = int(seeding_match.group(2).strip()) if seeding_match and seeding_match.group(2).strip() else 0
-
         leeching_match = re.search(r"(Torrents leeching|下载中)[\u4E00-\u9FA5\D\s]+(\d+)[\s\S]+<", html_text)
         self.leeching = int(leeching_match.group(2).strip()) if leeching_match and leeching_match.group(
             2).strip() else 0
 
         html = etree.HTML(html_text)
-        tmps = html.xpath('//span[@class = "ucoin-symbol ucoin-gold"]//text()')
+        tmps = html.xpath('//span[@class = "ucoin-symbol ucoin-gold"]//text()') if html else None
         if tmps:
             self.bonus = float(str(tmps[-1]).strip())
         else:
@@ -90,9 +89,15 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
         if not html:
             return None
 
+        size_col = 3
+        # 搜索size列
+        if html.xpath('//tr[position()=1]/td[img[@class="size"] and img[@alt="size"]]'):
+            size_col = len(html.xpath('//tr[position()=1]/td[img[@class="size"] '
+                                      'and img[@alt="size"]]/preceding-sibling::td')) + 1
+
         page_seeding = 0
         page_seeding_size = 0
-        seeding_torrents = html.xpath('//tr[position()>1]/td[3]')
+        seeding_torrents = html.xpath(f'//tr[position()>1]/td[{size_col}]')
         if seeding_torrents:
             page_seeding = len(seeding_torrents)
 
@@ -131,7 +136,7 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
                                       '|//tr/td[text()="等級" or text()="等级"]/'
                                       'following-sibling::td[1 and img[not(@title)]]/text()'
                                       '|//tr/td[text()="等級" or text()="等级"]/'
-                                      'following-sibling::td[1 and not(img)]/text()')
+                                      'following-sibling::td[1]//text()')
         if user_levels_text:
             self.user_level = user_levels_text[0].strip()
 
@@ -140,17 +145,22 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
         if join_at_text:
             self.join_at = join_at_text[0].strip()
 
-        # 做种体积
+        # 做种体积 & 做种数
         # seeding 页面获取不到的话，此处再获取一次
-        if not self.seeding_size:
-            self.seeding_size = 0
-            seeding_sizes = html.xpath('//tr/td[text()="当前上传"]/following-sibling::td[1]//'
-                                       'table[tr[1][td[4 and text()="尺寸"]]]//tr[position()>1]/td[4]')
-            for per_size in seeding_sizes:
-                self.seeding_size += num_filesize(per_size.xpath("string(.)").strip())
+        seeding_sizes = html.xpath('//tr/td[text()="当前上传"]/following-sibling::td[1]//'
+                                   'table[tr[1][td[4 and text()="尺寸"]]]//tr[position()>1]/td[4]')
+        tmp_seeding = len(seeding_sizes)
+        tmp_seeding_size = 0
+        for per_size in seeding_sizes:
+            tmp_seeding_size += num_filesize(per_size.xpath("string(.)").strip())
 
-        # 存在链接跳转新页面，代表较多数据量，需要使用跳转链接查询
-        seeding_url_text = html.xpath('//tr/td[text()="目前做種"]/following-sibling::td[1]/'
-                                      'a[1 and @target = "_blank"]/@href')
+        if not self.seeding_size:
+            self.seeding_size = tmp_seeding_size
+        if not self.seeding:
+            self.seeding = tmp_seeding
+
+        # 单独的种子页面
+        seeding_url_text = html.xpath('//a[contains(@href,"getusertorrentlist.php") '
+                                      'and contains(@href,"seeding")]/@href')
         if seeding_url_text:
             self._torrent_seeding_page = seeding_url_text[0].strip()

@@ -102,6 +102,12 @@ class DBHelper:
                                    LACK    INTEGER,
                                    STATE    TEXT);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_RSS_TVS_NAME ON RSS_TVS(NAME);''')
+            # 电视剧订阅剧集明细
+            cursor.execute('''CREATE TABLE IF NOT EXISTS RSS_TV_EPISODES
+                                               (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                               RSSID    TEXT,
+                                               EPISODES    TEXT);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_RSS_TV_EPISODES_RSSID ON RSS_TV_EPISODES (RSSID);''')
             # 豆瓣关注信息表
             cursor.execute('''CREATE TABLE IF NOT EXISTS DOUBAN_MEDIAS
                                    (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
@@ -192,15 +198,21 @@ class DBHelper:
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_MESSAGES_DATE ON MESSAGES (DATE);''')
 
             # 站点流量历史
-            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_STATISTICS
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_STATISTICS_HISTORY
                                                            (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
                                                            SITE    TEXT,
                                                            DATE    TEXT,
+                                                           USER_LEVEL    TEXT,
                                                            UPLOAD    TEXT,
                                                            DOWNLOAD     TEXT,
                                                            RATIO     TEXT,
+                                                           SEEDING     INTEGER default 0,
+                                                           LEECHING     INTEGER default 0,
+                                                           SEEDING_SIZE     INTEGER default 0,
+                                                           BONUS     REAL default 0.0,
                                                            URL     TEXT);''')
-            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_STATISTICS_DS ON SITE_STATISTICS (DATE, URL);''')
+
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_STATISTICS_HISTORY_DS ON SITE_STATISTICS_HISTORY (DATE, URL);''')
 
             # 实时站点数据
             cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_USER_STATISTICS
@@ -212,16 +224,19 @@ class DBHelper:
                                                            UPDATE_AT    TEXT,
                                                            UPLOAD    INTEGER,
                                                            DOWNLOAD     INTEGER,
-                                                           RATIO     real,
+                                                           RATIO     REAL,
                                                            SEEDING     INTEGER,
                                                            LEECHING     INTEGER,
                                                            SEEDING_SIZE     INTEGER,
-                                                           BONUS     real,
+                                                           BONUS     REAL,
                                                            URL     TEXT);''')
             cursor.execute(
                 '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_STATISTICS_URL ON SITE_USER_STATISTICS (URL);''')
             cursor.execute(
                 '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_STATISTICS_SITE ON SITE_USER_STATISTICS (SITE);''')
+            # 删除重复数据
+            cursor.execute(
+                """DELETE FROM SITE_USER_STATISTICS WHERE EXISTS (SELECT 1 FROM SITE_USER_STATISTICS p2 WHERE SITE_USER_STATISTICS.URL = p2.URL AND SITE_USER_STATISTICS.rowid < p2.rowid);""")
 
             # 下载历史
             cursor.execute('''CREATE TABLE IF NOT EXISTS DOWNLOAD_HISTORY
