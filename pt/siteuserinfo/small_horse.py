@@ -2,7 +2,7 @@
 import re
 
 from pt.siteuserinfo.site_user_info import ISiteUserInfo
-from utils.functions import num_filesize
+from utils.functions import num_filesize, str_float, str_int
 from lxml import etree
 
 
@@ -21,6 +21,9 @@ class SmallHorseSiteUserInfo(ISiteUserInfo):
             self._user_detail_page = user_detail.group().strip().lstrip('/')
             self.userid = user_detail.group(1)
         self._user_traffic_page = self._user_traffic_page + self.userid
+
+        if not self.userid:
+            self.err_msg = "获取不到用户信息，请检查cookies是否过期"
 
     def _parse_user_base_info(self, html_text):
         html_text = self._prepare_html_text(html_text)
@@ -42,11 +45,11 @@ class SmallHorseSiteUserInfo(ISiteUserInfo):
             self.join_at = str(tmps[1].xpath("li")[0].xpath("span//text()")[0])
             self.upload = num_filesize(str(tmps[1].xpath("li")[2].xpath("text()")[0]).split(":")[1].strip())
             self.download = num_filesize(str(tmps[1].xpath("li")[3].xpath("text()")[0]).split(":")[1].strip())
-            self.ratio = float(str(tmps[1].xpath("li")[4].xpath("span//text()")[0]).strip())
-            self.bonus = float(str(tmps[1].xpath("li")[5].xpath("text()")[0]).split(":")[1].strip())
+            self.ratio = str_float(str(tmps[1].xpath("li")[4].xpath("span//text()")[0]))
+            self.bonus = str_float(str(tmps[1].xpath("li")[5].xpath("text()")[0]).split(":")[1])
             self.user_level = str(tmps[3].xpath("li")[0].xpath("text()")[0]).split(":")[1].strip()
-            self.seeding = int((tmps[4].xpath("li")[5].xpath("text()")[0]).split(":")[1].replace("[", "").strip())
-            self.leeching = int((tmps[4].xpath("li")[6].xpath("text()")[0]).split(":")[1].replace("[", "").strip())
+            self.seeding = str_int((tmps[4].xpath("li")[5].xpath("text()")[0]).split(":")[1].replace("[", ""))
+            self.leeching = str_int((tmps[4].xpath("li")[6].xpath("text()")[0]).split(":")[1].replace("[", ""))
 
     def _parse_user_detail_info(self, html_text):
         pass

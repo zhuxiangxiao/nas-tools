@@ -1,4 +1,3 @@
-import _thread
 import importlib
 import signal
 from urllib import parse
@@ -7,19 +6,24 @@ from flask_login import logout_user
 from werkzeug.security import generate_password_hash
 
 import log
-from config import RMT_MEDIAEXT, Config, GRAP_FREE_SITES
+from config import RMT_MEDIAEXT, Config
 from message.channel.telegram import Telegram
 from message.channel.wechat import WeChat
 from message.send import Message
+from pt.brushtask import BrushTask
 from pt.client.qbittorrent import Qbittorrent
 from pt.client.transmission import Transmission
 from pt.douban import DouBan
 from pt.downloader import Downloader
+from pt.filterrules import FilterRule
 from pt.mediaserver.jellyfin import Jellyfin
 from pt.mediaserver.plex import Plex
 from pt.rss import Rss
+from pt.siteconf import RSS_SITE_GRAP_CONF
 from pt.sites import Sites
+from pt.subtitle import Subtitle
 from pt.torrent import Torrent
+from rmt.category import Category
 from rmt.doubanv2api.doubanapi import DoubanApi
 from rmt.filetransfer import FileTransfer
 from rmt.media import Media
@@ -32,9 +36,12 @@ from utils.functions import *
 from utils.http_utils import RequestUtils
 from utils.meta_helper import MetaHelper
 from utils.sqls import *
+from utils.sysmsg_helper import MessageCenter
+from utils.thread_helper import ThreadHelper
 from utils.types import MediaType, SearchType, DownloaderType, SyncType
+from web.backend.douban_hot import DoubanHot
 from web.backend.search_torrents import search_medias_for_web, search_media_by_message
-from web.backend.subscribe import add_rss_subscribe, add_rss_substribe_from_string
+from web.backend.subscribe import add_rss_subscribe
 
 
 class WebAction:
@@ -60,10 +67,6 @@ class WebAction:
             "update_site": self.__update_site,
             "get_site": self.__get_site,
             "del_site": self.__del_site,
-            "get_search_rule": self.__get_search_rule,
-            "update_search_rule": self.__update_search_rule,
-            "get_rss_rule": self.__get_rss_rule,
-            "update_rss_rule": self.__update_rss_rule,
             "restart": self.__restart,
             "update_system": self.__update_system,
             "logout": self.__logout,
@@ -80,7 +83,29 @@ class WebAction:
             "delete_tmdb_cache": self.__delete_tmdb_cache,
             "movie_calendar_data": self.__movie_calendar_data,
             "tv_calendar_data": self.__tv_calendar_data,
-            "modify_tmdb_cache": self.__modify_tmdb_cache
+            "modify_tmdb_cache": self.__modify_tmdb_cache,
+            "rss_detail": self.__rss_detail,
+            "truncate_blacklist": self.__truncate_blacklist,
+            "add_brushtask": self.__add_brushtask,
+            "del_brushtask": self.__del_brushtask,
+            "brushtask_detail": self.__brushtask_detail,
+            "add_downloader": self.__add_downloader,
+            "delete_downloader": self.__delete_downloader,
+            "name_test": self.__name_test,
+            "rule_test": self.__rule_test,
+            "add_filtergroup": self.__add_filtergroup,
+            "set_default_filtergroup": self.__set_default_filtergroup,
+            "del_filtergroup": self.__del_filtergroup,
+            "add_filterrule": self.__add_filterrule,
+            "del_filterrule": self.__del_filterrule,
+            "filterrule_detail": self.__filterrule_detail,
+            "get_site_activity": self.__get_site_activity,
+            "get_site_history": self.__get_site_history,
+            "get_recommend": self.get_recommend,
+            "get_downloaded": self.get_downloaded,
+            "get_site_seeding_info": self.__get_site_seeding_info,
+            "clear_tmdb_cache": self.__clear_tmdb_cache,
+            "check_site_attr": self.__check_site_attr
         }
 
     def action(self, cmd, data):
@@ -133,14 +158,11 @@ class WebAction:
                     Message().send_channel_msg(channel=in_from, title="错误：只有管理员才有权限执行此命令")
                     return
             # 启动服务
-            _thread.start_new_thread(command.get("func"), ())
+            ThreadHelper().start_thread(command.get("func"), ())
             Message().send_channel_msg(channel=in_from, title="%s 已启动" % command.get("desp"))
-        elif msg.startswith("订阅"):
-            # 添加订阅
-            _thread.start_new_thread(add_rss_substribe_from_string, (msg, in_from, user_id,))
         else:
-            # PT检索
-            _thread.start_new_thread(search_media_by_message, (msg, in_from, user_id,))
+            # PT检索或者添加订阅
+            ThreadHelper().start_thread(search_media_by_message, (msg, in_from, user_id,))
 
     @staticmethod
     def set_config_value(cfg, cfg_key, cfg_value):
@@ -260,7 +282,7 @@ class WebAction:
         }
         sch_item = data.get("item")
         if sch_item and commands.get(sch_item):
-            _thread.start_new_thread(commands.get(sch_item), ())
+            ThreadHelper().start_thread(commands.get(sch_item), ())
         return {"retmsg": "服务已启动", "item": sch_item}
 
     @staticmethod
@@ -583,9 +605,6 @@ class WebAction:
         """
         检查新版本
         """
-        version = ""
-        info = ""
-        code = 0
         try:
             response = RequestUtils(proxies=self.config.get_proxies()).get_res(
                 "https://api.github.com/repos/jxxghp/nas-tools/releases/latest")
@@ -593,10 +612,10 @@ class WebAction:
                 ver_json = response.json()
                 version = ver_json["tag_name"]
                 info = f'<a href="{ver_json["html_url"]}" target="_blank">{version}</a>'
+                return {"code": 0, "version": version, "info": info}
         except Exception as e:
-            log.console(str(e))
-            code = -1
-        return {"code": code, "version": version, "info": info}
+            print(str(e))
+        return {"code": -1, "version": "", "info": ""}
 
     @staticmethod
     def __update_site(data):
@@ -609,10 +628,7 @@ class WebAction:
         rssurl = data.get('site_rssurl')
         signurl = data.get('site_signurl')
         cookie = data.get('site_cookie')
-        include = data.get('site_include')
-        exclude = data.get('site_exclude')
         note = data.get('site_note')
-        size = data.get('site_size')
         if tid:
             ret = update_config_site(tid=tid,
                                      name=name,
@@ -620,9 +636,6 @@ class WebAction:
                                      rssurl=rssurl,
                                      signurl=signurl,
                                      cookie=cookie,
-                                     include=include,
-                                     exclude=exclude,
-                                     size=size,
                                      note=note)
         else:
             ret = insert_config_site(name=name,
@@ -630,9 +643,6 @@ class WebAction:
                                      rssurl=rssurl,
                                      signurl=signurl,
                                      cookie=cookie,
-                                     include=include,
-                                     exclude=exclude,
-                                     size=size,
                                      note=note)
         # 生效站点配置
         Sites().init_config()
@@ -646,18 +656,21 @@ class WebAction:
         tid = data.get("id")
         site_free = False
         site_2xfree = False
+        site_hr = False
         if tid:
-            ret = get_site_by_id(tid)
-            if ret[0][3]:
-                url_host = parse.urlparse(ret[0][3]).netloc
-                if url_host in GRAP_FREE_SITES.keys():
-                    if GRAP_FREE_SITES[url_host].get("FREE"):
+            ret = Sites().get_sites(siteid=tid)
+            if ret.get("rssurl"):
+                url_host = parse.urlparse(ret.get("rssurl")).netloc
+                if url_host in RSS_SITE_GRAP_CONF.keys():
+                    if RSS_SITE_GRAP_CONF[url_host].get("FREE"):
                         site_free = True
-                    if GRAP_FREE_SITES[url_host].get("2XFREE"):
+                    if RSS_SITE_GRAP_CONF[url_host].get("2XFREE"):
                         site_2xfree = True
+                    if RSS_SITE_GRAP_CONF[url_host].get("HR"):
+                        site_hr = True
         else:
             ret = []
-        return {"code": 0, "site": ret, "site_free": site_free, "site_2xfree": site_2xfree}
+        return {"code": 0, "site": ret, "site_free": site_free, "site_2xfree": site_2xfree, "site_hr": site_hr}
 
     @staticmethod
     def __del_site(data):
@@ -671,43 +684,6 @@ class WebAction:
             return {"code": ret}
         else:
             return {"code": 0}
-
-    @staticmethod
-    def __get_search_rule(data):
-        """
-        查询搜索过滤规则
-        """
-        ret = get_config_search_rule()
-        return {"code": 0, "rule": ret}
-
-    @staticmethod
-    def __update_search_rule(data):
-        """
-        更新搜索过滤规则
-        """
-        include = data.get('search_include')
-        exclude = data.get('search_exclude')
-        note = data.get('search_note')
-        size = data.get('search_size')
-        ret = update_config_search_rule(include=include, exclude=exclude, note=note, size=size)
-        return {"code": ret}
-
-    @staticmethod
-    def __get_rss_rule(data):
-        """
-        查询RSS全局过滤规则
-        """
-        ret = get_config_rss_rule()
-        return {"code": 0, "rule": ret}
-
-    @staticmethod
-    def __update_rss_rule(data):
-        """
-        更新搜索过滤规则
-        """
-        note = data.get('rss_note')
-        ret = update_config_rss_rule(note=note)
-        return {"code": ret}
 
     def __restart(self, data):
         """
@@ -750,10 +726,10 @@ class WebAction:
         scheduler_reload = False
         jellyfin_reload = False
         plex_reload = False
-        qbittorrent_reload = False
-        transmission_reload = False
         wechat_reload = False
         telegram_reload = False
+        category_reload = False
+        subtitle_reload = False
         # 修改配置
         for key, value in cfgs:
             if key == "test" and value:
@@ -768,14 +744,14 @@ class WebAction:
                 jellyfin_reload = True
             if key.startswith("plex"):
                 plex_reload = True
-            if key.startswith("qbittorrent"):
-                qbittorrent_reload = True
-            if key.startswith("transmission"):
-                transmission_reload = True
             if key.startswith("message.telegram"):
                 telegram_reload = True
             if key.startswith("message.wechat"):
                 wechat_reload = True
+            if key.startswith("media.category"):
+                category_reload = True
+            if key.startswith("subtitle"):
+                subtitle_reload = True
         # 保存配置
         if not config_test:
             self.config.save_config(cfg)
@@ -789,18 +765,18 @@ class WebAction:
         # 重载Plex
         if plex_reload:
             Plex().init_config()
-        # 重载qbittorrent
-        if qbittorrent_reload:
-            Qbittorrent().init_config()
-        # 重载transmission
-        if transmission_reload:
-            Transmission().init_config()
         # 重载wechat
         if wechat_reload:
             WeChat().init_config()
         # 重载telegram
         if telegram_reload:
             Telegram().init_config()
+        # 重载二级分类
+        if category_reload:
+            Category().init_config()
+        # 重载字幕
+        if subtitle_reload:
+            Subtitle().init_config()
 
         return {"code": 0}
 
@@ -860,7 +836,8 @@ class WebAction:
         over_edition = data.get("over_edition")
         rss_restype = data.get("rss_restype")
         rss_pix = data.get("rss_pix")
-        rss_keyword = data.get("rss_keyword")
+        rss_rule = data.get("rss_rule")
+        rssid = data.get("rssid")
         if name and mtype:
             if mtype in ['nm', 'hm', 'dbom', 'dbhm', 'dbnm', 'MOV']:
                 mtype = MediaType.MOVIE
@@ -878,7 +855,8 @@ class WebAction:
                                                   over_edition=over_edition,
                                                   rss_restype=rss_restype,
                                                   rss_pix=rss_pix,
-                                                  rss_keyword=rss_keyword)
+                                                  rss_rule=rss_rule,
+                                                  rssid=rssid)
         return {"code": code, "msg": msg, "page": page, "name": name}
 
     @staticmethod
@@ -944,7 +922,8 @@ class WebAction:
                 if not tmdb_info:
                     return {"code": 1, "retmsg": "无法查询到TMDB信息", "link_url": link_url}
                 overview = tmdb_info.get("overview")
-                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path')
+                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path') if tmdb_info.get(
+                    'poster_path') else ""
                 title = tmdb_info.get('title')
                 vote_average = tmdb_info.get("vote_average")
                 release_date = tmdb_info.get('release_date')
@@ -959,6 +938,7 @@ class WebAction:
             return {
                 "code": 0,
                 "type": mtype,
+                "type_str": media_type.value,
                 "page": page,
                 "title": title,
                 "vote_average": vote_average,
@@ -990,7 +970,8 @@ class WebAction:
                 if not tmdb_info:
                     return {"code": 1, "retmsg": "无法查询到TMDB信息", "link_url": link_url}
                 overview = tmdb_info.get("overview")
-                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path')
+                poster_path = "https://image.tmdb.org/t/p/w500%s" % tmdb_info.get('poster_path') if tmdb_info.get(
+                    'poster_path') else ""
                 title = tmdb_info.get('name')
                 vote_average = tmdb_info.get("vote_average")
                 release_date = tmdb_info.get('first_air_date')
@@ -1000,11 +981,10 @@ class WebAction:
             if not rssid:
                 rssid = get_rss_tv_id(title=title, year=year)
 
-            # 查下载信息
-
             return {
                 "code": 0,
                 "type": mtype,
+                "type_str": media_type.value,
                 "page": page,
                 "title": title,
                 "vote_average": vote_average,
@@ -1073,9 +1053,9 @@ class WebAction:
         rssid = data.get("rssid")
         page = data.get("page")
         if mtype == "MOV":
-            _thread.start_new_thread(Rss().rsssearch_movie, (rssid,))
+            ThreadHelper().start_thread(Rss().rsssearch_movie, (rssid,))
         else:
-            _thread.start_new_thread(Rss().rsssearch_tv, (rssid,))
+            ThreadHelper().start_thread(Rss().rsssearch_tv, (rssid,))
         return {"code": 0, "page": page}
 
     @staticmethod
@@ -1084,13 +1064,14 @@ class WebAction:
         刷新首页消息中心
         """
         lst_time = data.get("lst_time")
-        messages = get_system_messages(lst_time=lst_time)
+        messages = MessageCenter().get_system_messages(lst_time=lst_time)
         message_html = []
         for message in list(reversed(messages)):
-            lst_time = message[4]
-            level = "bg-red" if message[1] == "ERROR" else ""
+            lst_time = message.get("time")
+            level = "bg-red" if message.get("level") == "ERROR" else ""
             content = re.sub(r"[#]+", "<br>",
-                             re.sub(r"<[^>]+>", "", re.sub(r"<br/?>", "####", message[3], flags=re.IGNORECASE)))
+                             re.sub(r"<[^>]+>", "",
+                                    re.sub(r"<br/?>", "####", message.get("content"), flags=re.IGNORECASE)))
             message_html.append(f"""
             <div class="list-group-item">
               <div class="row align-items-center">
@@ -1098,9 +1079,9 @@ class WebAction:
                   <span class="status-dot {level} d-block"></span>
                 </div>
                 <div class="col text-truncate">
-                  <span class="text-wrap">{message[2]}</span>
+                  <span class="text-wrap">{message.get("title")}</span>
                   <div class="d-block text-muted text-truncate mt-n1 text-wrap">{content}</div>
-                  <div class="d-block text-muted text-truncate mt-n1 text-wrap">{message[4]}</div>
+                  <div class="d-block text-muted text-truncate mt-n1 text-wrap">{message.get("time")}</div>
                 </div>
               </div>
             </div>
@@ -1224,6 +1205,40 @@ class WebAction:
             return {"code": 0, "events": episode_events}
 
     @staticmethod
+    def __rss_detail(data):
+        rssid = data.get("rssid")
+        rsstype = data.get("rsstype")
+        if rsstype == "MOV":
+            rss = get_rss_movies(rssid=rssid)
+            if not rss:
+                return {"code": 1}
+            r_sites, s_sites, over_edition, filter_map = Torrent.get_rss_note_item(rss[0][4])
+            rssdetail = {"rssid": rssid,
+                         "name": rss[0][0],
+                         "year": rss[0][1],
+                         "tmdbid": rss[0][2],
+                         "r_sites": r_sites,
+                         "s_sites": s_sites,
+                         "over_edition": over_edition,
+                         "filter": filter_map}
+        else:
+            rss = get_rss_tvs(rssid=rssid)
+            if not rss:
+                return {"code": 1}
+            r_sites, s_sites, over_edition, filter_map = Torrent.get_rss_note_item(rss[0][5])
+            rssdetail = {"rssid": rssid,
+                         "name": rss[0][0],
+                         "year": rss[0][1],
+                         "season": rss[0][2],
+                         "tmdbid": rss[0][3],
+                         "r_sites": r_sites,
+                         "s_sites": s_sites,
+                         "over_edition": over_edition,
+                         "filter": filter_map}
+
+        return {"code": 0, "detail": rssdetail}
+
+    @staticmethod
     def __modify_tmdb_cache(data):
         """
         修改TMDB缓存的标题
@@ -1231,6 +1246,402 @@ class WebAction:
         if MetaHelper().modify_meta_data(data.get("key"), data.get("title")):
             MetaHelper().save_meta_data(force=True)
         return {"code": 0}
+
+    @staticmethod
+    def __truncate_blacklist(data):
+        """
+        清空文件转移黑名单记录
+        """
+        return {"code": truncate_transfer_blacklist()}
+
+    @staticmethod
+    def __add_brushtask(data):
+        """
+        新增刷流任务
+        """
+        # 输入值
+        brushtask_id = data.get("brushtask_id")
+        brushtask_name = data.get("brushtask_name")
+        brushtask_site = data.get("brushtask_site")
+        brushtask_interval = data.get("brushtask_interval")
+        brushtask_downloader = data.get("brushtask_downloader")
+        brushtask_totalsize = data.get("brushtask_totalsize")
+        brushtask_state = data.get("brushtask_state")
+        brushtask_transfer = 'Y' if data.get("brushtask_transfer") else 'N'
+        brushtask_free = data.get("brushtask_free")
+        brushtask_hr = data.get("brushtask_hr")
+        brushtask_torrent_size = data.get("brushtask_torrent_size")
+        brushtask_include = data.get("brushtask_include")
+        brushtask_exclude = data.get("brushtask_exclude")
+        brushtask_dlcount = data.get("brushtask_dlcount")
+        brushtask_seedtime = data.get("brushtask_seedtime")
+        brushtask_seedratio = data.get("brushtask_seedratio")
+        brushtask_seedsize = data.get("brushtask_seedsize")
+        brushtask_dltime = data.get("brushtask_dltime")
+        # 选种规则
+        rss_rule = {
+            "free": brushtask_free,
+            "hr": brushtask_hr,
+            "size": brushtask_torrent_size,
+            "include": brushtask_include,
+            "exclude": brushtask_exclude,
+            "dlcount": brushtask_dlcount
+        }
+        # 删除规则
+        remove_rule = {
+            "time": brushtask_seedtime,
+            "ratio": brushtask_seedratio,
+            "uploadsize": brushtask_seedsize,
+            "dltime": brushtask_dltime
+        }
+        # 添加记录
+        item = {
+            "name": brushtask_name,
+            "site": brushtask_site,
+            "free": brushtask_free,
+            "interval": brushtask_interval,
+            "downloader": brushtask_downloader,
+            "seed_size": brushtask_totalsize,
+            "transfer": brushtask_transfer,
+            "state": brushtask_state,
+            "rss_rule": rss_rule,
+            "remove_rule": remove_rule
+        }
+        insert_brushtask(brushtask_id, item)
+        # 重新初始化任务
+        BrushTask().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __del_brushtask(data):
+        """
+        删除刷流任务
+        """
+        brush_id = data.get("id")
+        if brush_id:
+            delete_brushtask(brush_id)
+            # 重新初始化任务
+            BrushTask().init_config()
+            return {"code": 0}
+        return {"code": 1}
+
+    @staticmethod
+    def __brushtask_detail(data):
+        """
+        查询刷流任务详情
+        """
+        brush_id = data.get("id")
+        brushtask = get_brushtasks(brush_id)
+        if not brushtask:
+            return {"code": 1, "task": {}}
+        task = {
+            "id": brushtask[0][0],
+            "name": brushtask[0][1],
+            "site": brushtask[0][2],
+            "interval": brushtask[0][4],
+            "state": brushtask[0][5],
+            "downloader": brushtask[0][6],
+            "transfer": brushtask[0][7],
+            "free": brushtask[0][8],
+            "rss_rule": eval(brushtask[0][9]),
+            "remove_rule": eval(brushtask[0][10]),
+            "seed_size": brushtask[0][11],
+            "download_count": brushtask[0][12],
+            "remove_count": brushtask[0][13],
+            "download_size": str_filesize(brushtask[0][14]),
+            "upload_size": str_filesize(brushtask[0][15]),
+            "lst_mod_date": brushtask[0][16],
+            "site_url": "http://%s" % parse.urlparse(brushtask[0][17]).netloc if brushtask[0][17] else ""
+        }
+        return {"code": 0, "task": task}
+
+    @staticmethod
+    def __add_downloader(data):
+        """
+        添加自定义下载器
+        """
+        test = data.get("test")
+        dl_name = data.get("name")
+        dl_type = data.get("type")
+        user_config = {"host": data.get("host"),
+                       "port": data.get("port"),
+                       "username": data.get("username"),
+                       "password": data.get("password"),
+                       "save_dir": data.get("save_dir")}
+        if test:
+            # 测试
+            if dl_type == "qbittorrent":
+                downloader = Qbittorrent(user_config=user_config)
+            else:
+                downloader = Transmission(user_config=user_config)
+            if downloader.get_status():
+                return {"code": 0}
+            else:
+                return {"code": 1}
+        else:
+            # 保存
+            insert_user_downloader(name=dl_name, dtype=dl_type, user_config=user_config, note=None)
+            return {"code": 0}
+
+    @staticmethod
+    def __delete_downloader(data):
+        """
+        删除自定义下载器
+        """
+        dl_id = data.get("id")
+        if dl_id:
+            delete_user_downloader(dl_id)
+        return {"code": 0}
+
+    @staticmethod
+    def __name_test(data):
+        """
+        名称识别测试
+        """
+        name = data.get("name")
+        if not name:
+            return {"code": -1}
+        media_info = Media().get_media_info(title=name)
+        return {"code": 0, "data": {
+            "type": media_info.type.value,
+            "name": media_info.get_name(),
+            "title": media_info.title,
+            "year": media_info.year,
+            "season_episode": media_info.get_season_episode_string(),
+            "tmdbid": media_info.tmdb_id,
+            "category": media_info.category,
+            "restype": media_info.resource_type,
+            "pix": media_info.resource_pix,
+            "video_codec": media_info.video_encode,
+            "audio_codec": media_info.audio_encode
+        }}
+
+    @staticmethod
+    def __rule_test(data):
+        title = data.get("title")
+        subtitle = data.get("subtitle")
+        size = data.get("size")
+        if size:
+            size = float(size) * 1024 ** 3
+        if not title:
+            return {"code": -1}
+        meta_info = MetaInfo(title=title, subtitle=subtitle)
+        match_flag, res_order, rule_name = FilterRule().check_rules(meta_info=meta_info,
+                                                                    torrent_size=size)
+        return {
+            "code": 0,
+            "flag": match_flag,
+            "text": "匹配" if match_flag else "未匹配",
+            "name": rule_name if rule_name else "未设置默认规则",
+            "order": 100 - res_order if res_order else 0
+        }
+
+    @staticmethod
+    def __get_site_activity(data):
+        """
+        查询site活动[上传，下载，魔力值]
+        :param data: {"name":site_name}
+        :return:
+        """
+        if not data or "name" not in data:
+            return {"code": 1, "msg": "查询参数错误"}
+
+        resp = {"code": 0}
+        resp.update(Sites().get_pt_site_activity_history(data["name"]))
+        return resp
+
+    @staticmethod
+    def __get_site_history(data):
+        """
+        查询site 历史[上传，下载]
+        :param data: {"days":累计时间}
+        :return:
+        """
+        if not data or "days" not in data or not isinstance(data["days"], int):
+            return {"code": 1, "msg": "查询参数错误"}
+
+        resp = {"code": 0}
+        _, _, site, upload, download = Sites().get_pt_site_statistics_history(data["days"]+1)
+        resp.update({"site": site, "upload": upload, "download": download})
+        return resp
+
+    @staticmethod
+    def __get_site_seeding_info(data):
+        """
+        查询site 做种分布信息 大小，做种数
+        :param data: {"name":site_name}
+        :return:
+        """
+        if not data or "name" not in data:
+            return {"code": 1, "msg": "查询参数错误"}
+
+        resp = {"code": 0}
+        resp.update(Sites().get_pt_site_seeding_info(data["name"]))
+        return resp
+
+    @staticmethod
+    def __add_filtergroup(data):
+        """
+        新增规则组
+        """
+        name = data.get("name")
+        default = data.get("default")
+        if not name:
+            return {"code": -1}
+        add_filter_group(name, default)
+        FilterRule().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __set_default_filtergroup(data):
+        groupid = data.get("id")
+        if not groupid:
+            return {"code": -1}
+        set_default_filtergroup(groupid)
+        FilterRule().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __del_filtergroup(data):
+        groupid = data.get("id")
+        delete_filtergroup(groupid)
+        FilterRule().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __add_filterrule(data):
+        rule_id = data.get("rule_id")
+        item = {
+            "group": data.get("group_id"),
+            "name": data.get("rule_name"),
+            "pri": data.get("rule_pri"),
+            "include": data.get("rule_include"),
+            "exclude": data.get("rule_exclude"),
+            "size": data.get("rule_sizelimit")
+        }
+        insert_filter_rule(rule_id, item)
+        FilterRule().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __del_filterrule(data):
+        ruleid = data.get("id")
+        delete_filterrule(ruleid)
+        FilterRule().init_config()
+        return {"code": 0}
+
+    @staticmethod
+    def __filterrule_detail(data):
+        rid = data.get("ruleid")
+        groupid = data.get("groupid")
+        ruleinfo = FilterRule().get_rules(groupid=groupid, ruleid=rid)
+        if ruleinfo:
+            ruleinfo['include'] = "\n".join(ruleinfo.get("include"))
+            ruleinfo['exclude'] = "\n".join(ruleinfo.get("exclude"))
+        return {"code": 0, "info": ruleinfo}
+
+    @staticmethod
+    def get_recommend(data):
+        RecommendType = data.get("type")
+        CurrentPage = data.get("page")
+        if not CurrentPage:
+            CurrentPage = 1
+        else:
+            CurrentPage = int(CurrentPage)
+        if RecommendType == "hm":
+            # TMDB热门电影
+            res_list = Media().get_tmdb_hot_movies(CurrentPage)
+        elif RecommendType == "ht":
+            # TMDB热门电视剧
+            res_list = Media().get_tmdb_hot_tvs(CurrentPage)
+        elif RecommendType == "nm":
+            # TMDB最新电影
+            res_list = Media().get_tmdb_new_movies(CurrentPage)
+        elif RecommendType == "nt":
+            # TMDB最新电视剧
+            res_list = Media().get_tmdb_new_tvs(CurrentPage)
+        elif RecommendType == "dbom":
+            # 豆瓣正在上映
+            res_list = DoubanHot().get_douban_online_movie(CurrentPage)
+        elif RecommendType == "dbhm":
+            # 豆瓣热门电影
+            res_list = DoubanHot().get_douban_hot_movie(CurrentPage)
+        elif RecommendType == "dbht":
+            # 豆瓣热门电视剧
+            res_list = DoubanHot().get_douban_hot_tv(CurrentPage)
+        elif RecommendType == "dbdh":
+            # 豆瓣热门动画
+            res_list = DoubanHot().get_douban_hot_anime(CurrentPage)
+        elif RecommendType == "dbnm":
+            # 豆瓣最新电影
+            res_list = DoubanHot().get_douban_new_movie(CurrentPage)
+        elif RecommendType == "dbzy":
+            # 豆瓣最新电视剧
+            res_list = DoubanHot().get_douban_hot_show(CurrentPage)
+        else:
+            res_list = []
+
+        Items = []
+        TvKeys = ["%s" % key[0] for key in get_rss_tvs()]
+        MovieKeys = ["%s" % key[0] for key in get_rss_movies()]
+        for res in res_list:
+            rid = res.get('id')
+            if RecommendType in ['hm', 'nm', 'dbom', 'dbhm', 'dbnm']:
+                title = res.get('title')
+                date = res.get('release_date')
+                if date:
+                    year = date[0:4]
+                else:
+                    year = ''
+                if title in MovieKeys:
+                    # 已订阅
+                    fav = 1
+                elif is_media_downloaded(title, year):
+                    # 已下载
+                    fav = 2
+                else:
+                    # 未订阅、未下载
+                    fav = 0
+            else:
+                title = res.get('name')
+                date = res.get('first_air_date')
+                if date:
+                    year = date[0:4]
+                else:
+                    year = ''
+                if MetaInfo(title=title).get_name() in TvKeys:
+                    # 已订阅
+                    fav = 1
+                elif is_media_downloaded(MetaInfo(title=title).get_name(), year):
+                    # 已下载
+                    fav = 2
+                else:
+                    # 未订阅、未下载
+                    fav = 0
+            image = res.get('poster_path')
+            if RecommendType in ['hm', 'nm', 'ht', 'nt']:
+                image = "https://image.tmdb.org/t/p/original/%s" % image if image else ""
+            else:
+                # 替换图片分辨率
+                image = image.replace("s_ratio_poster", "m_ratio_poster")
+            vote = res.get('vote_average')
+            overview = res.get('overview')
+            item = {'id': rid,
+                    'title': title,
+                    'fav': fav,
+                    'date': date,
+                    'vote': vote,
+                    'image': image,
+                    'overview': overview,
+                    'year': year}
+            Items.append(item)
+        return {"code": 0, "Items": Items}
+
+    @staticmethod
+    def get_downloaded(data):
+        page = data.get("page")
+        Items = get_download_history(page=page) or []
+        return {"code": 0, "Items": Items}
 
     @staticmethod
     def parse_sites_string(notes):
@@ -1248,12 +1659,96 @@ class WebAction:
     def parse_filter_string(notes):
         if not notes:
             return ""
-        if not notes:
-            return ""
         _, _, over_edition, filter_map = Torrent.get_rss_note_item(notes)
         filter_htmls = []
         if over_edition:
             filter_htmls.append('<span class="badge badge-outline text-red me-1 mb-1" title="已开启洗版">洗版</span>')
-        filter_htmls += ['<span class="badge badge-outline text-orange me-1 mb-1">%s</span>' % v for v in filter_map.values() if v]
-
+        if filter_map.get("restype"):
+            filter_htmls.append(
+                '<span class="badge badge-outline text-orange me-1 mb-1">%s</span>' % filter_map.get("restype"))
+        if filter_map.get("pix"):
+            filter_htmls.append(
+                '<span class="badge badge-outline text-orange me-1 mb-1">%s</span>' % filter_map.get("pix"))
+        if filter_map.get("rule"):
+            filter_htmls.append('<span class="badge badge-outline text-orange me-1 mb-1">%s</span>' %
+                                FilterRule().get_rule_groups(groupid=filter_map.get("rule")).get("name") or "")
         return "".join(filter_htmls)
+
+    @staticmethod
+    def parse_brush_rule_string(rules: dict):
+        if not rules:
+            return ""
+        rule_filter_string = {"gt": "大于", "lt": "小于", "bw": "介于"}
+        rule_htmls = []
+        if rules.get("size"):
+            sizes = rules.get("size").split("#")
+            if sizes[0]:
+                if sizes[1]:
+                    sizes[1] = sizes[1].replace(",", "-")
+                rule_htmls.append('<span class="badge badge-outline text-blue me-1 mb-1" title="种子大小">%s: %s GB</span>'
+                                  % (rule_filter_string.get(sizes[0]), sizes[1]))
+        if rules.get("include"):
+            rule_htmls.append('<span class="badge badge-outline text-green me-1 mb-1" title="包含规则">包含: %s</span>'
+                              % rules.get("include"))
+        if rules.get("hr"):
+            rule_htmls.append('<span class="badge badge-outline text-red me-1 mb-1" title="排除HR">排除: HR</span>')
+        if rules.get("exclude"):
+            rule_htmls.append('<span class="badge badge-outline text-red me-1 mb-1" title="排除规则">排除: %s</span>'
+                              % rules.get("exclude"))
+        if rules.get("dlcount"):
+            rule_htmls.append('<span class="badge badge-outline text-orange me-1 mb-1" title="同时下载数量限制">同时下载: %s</span>'
+                              % rules.get("dlcount"))
+        if rules.get("time"):
+            times = rules.get("time").split("#")
+            if times[0]:
+                rule_htmls.append(
+                    '<span class="badge badge-outline text-orange me-1 mb-1" title="做种时间">做种%s: %s 小时</span>'
+                    % (rule_filter_string.get(times[0]), times[1]))
+        if rules.get("ratio"):
+            ratios = rules.get("ratio").split("#")
+            if ratios[0]:
+                rule_htmls.append('<span class="badge badge-outline text-orange me-1 mb-1" title="分享率">分享率%s: %s</span>'
+                                  % (rule_filter_string.get(ratios[0]), ratios[1]))
+        if rules.get("uploadsize"):
+            uploadsizes = rules.get("uploadsize").split("#")
+            if uploadsizes[0]:
+                rule_htmls.append(
+                    '<span class="badge badge-outline text-orange me-1 mb-1" title="上传量">上传量%s: %s GB</span>'
+                    % (rule_filter_string.get(uploadsizes[0]), uploadsizes[1]))
+        if rules.get("dltime"):
+            dltimes = rules.get("dltime").split("#")
+            if dltimes[0]:
+                rule_htmls.append(
+                    '<span class="badge badge-outline text-orange me-1 mb-1" title="下载耗时">下载耗时%s: %s 小时</span>'
+                    % (rule_filter_string.get(dltimes[0]), dltimes[1]))
+
+        return "<br>".join(rule_htmls)
+
+    @staticmethod
+    def __clear_tmdb_cache(data):
+        """
+        清空TMDB缓存
+        """
+        try:
+            MetaHelper().clear_meta_data()
+            os.remove(MetaHelper().get_meta_data_path())
+        except Exception as e:
+            return {"code": 0, "msg": str(e)}
+        return {"code": 0}
+
+    @staticmethod
+    def __check_site_attr(data):
+        """
+        检查站点标识
+        """
+        url = data.get("url")
+        url_host = parse.urlparse(url).netloc
+        site_free = site_2xfree = site_hr = False
+        if url_host in RSS_SITE_GRAP_CONF.keys():
+            if RSS_SITE_GRAP_CONF[url_host].get("FREE"):
+                site_free = True
+            if RSS_SITE_GRAP_CONF[url_host].get("2XFREE"):
+                site_2xfree = True
+            if RSS_SITE_GRAP_CONF[url_host].get("HR"):
+                site_hr = True
+        return {"code": 0, "site_free": site_free, "site_2xfree": site_2xfree, "site_hr": site_hr}

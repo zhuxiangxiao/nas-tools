@@ -1,66 +1,8 @@
-import re
-
-import log
-from message.send import Message
-from pt.torrent import Torrent
 from rmt.doubanv2api.doubanapi import DoubanApi
 from rmt.media import Media
 from rmt.metainfo import MetaInfo
-from utils.sqls import insert_rss_tv, insert_rss_movie
-from utils.types import MediaType, SearchType
-
-
-def add_rss_substribe_from_string(rss_string, in_from=SearchType.OT, user_id=None):
-    """
-    解析字符串，提取信息后添加订阅
-    :param rss_string: 输入字符串，以”订阅“两字开头
-    :param in_from: 搜索下载的请求来源
-    :param user_id: 需要发送消息的，传入该参数，则只给对应用户发送交互消息
-    :return: 状态 True/False
-    """
-    message = Message()
-    title_str = re.sub(r"订阅[:：\s]*", "", rss_string)
-    if not title_str:
-        log.info("【WEB】%s 内容有误" % rss_string)
-        if in_from in [SearchType.WX, SearchType.TG]:
-            message.send_channel_msg(channel=in_from,
-                                     title="订阅内容有误",
-                                     user_id=user_id)
-        return False
-    mtype, key_word, season_num, episode_num, year, title_str = Torrent.get_keyword_from_string(title_str)
-    if not key_word:
-        log.info("【WEB】%s 名称有误" % rss_string)
-        if in_from in [SearchType.WX, SearchType.TG]:
-            message.send_channel_msg(channel=in_from,
-                                     title="订阅名称有误",
-                                     user_id=user_id)
-        return False
-    code, msg, media_info = add_rss_subscribe(mtype, key_word, year, season_num)
-    if code == 0:
-        log.info("【WEB】%s %s 已添加订阅" % (media_info.type.value, media_info.get_title_string()))
-        if in_from in [SearchType.WX, SearchType.TG]:
-            if media_info.type == MediaType.MOVIE:
-                msg_title = f"{media_info.get_title_string()} 已添加订阅"
-            else:
-                msg_title = f"{media_info.get_title_string()} {media_info.get_season_string()} 已添加订阅"
-            msg_str = f"类型：{media_info.type.value}"
-            if media_info.vote_average:
-                msg_str = f"{msg_str}，{media_info.get_vote_string()}"
-
-            message.send_channel_msg(channel=in_from,
-                                     title=msg_title,
-                                     text=msg_str,
-                                     image=media_info.get_message_image(),
-                                     url='movie_rss' if media_info.type == MediaType.MOVIE else 'tv_rss',
-                                     user_id=user_id)
-        return True
-    else:
-        if in_from in [SearchType.WX, SearchType.TG]:
-            log.info("【WEB】%s 添加订阅失败：%s" % (key_word, msg))
-            message.send_channel_msg(channel=in_from,
-                                     title="%s 添加订阅失败：%s" % (key_word, msg),
-                                     user_id=user_id)
-        return False
+from utils.sqls import insert_rss_tv, insert_rss_movie, delete_rss_tv, delete_rss_movie
+from utils.types import MediaType
 
 
 def add_rss_subscribe(mtype, name, year,
@@ -73,8 +15,9 @@ def add_rss_subscribe(mtype, name, year,
                       over_edition=False,
                       rss_restype=None,
                       rss_pix=None,
-                      rss_keyword=None,
-                      state="D"):
+                      rss_rule=None,
+                      state="D",
+                      rssid=None):
     """
     添加电影、电视剧订阅
     :param mtype: 类型，电影、电视剧、动漫
@@ -89,8 +32,9 @@ def add_rss_subscribe(mtype, name, year,
     :param over_edition: 是否选版
     :param rss_restype: 质量过滤
     :param rss_pix: 分辨率过滤
-    :param rss_keyword: 关键字过滤
+    :param rss_rule: 关键字过滤
     :param state: 添加订阅时的状态
+    :param rssid: 修改订阅时传入
     :return: 错误码：0代表成功，错误信息
     """
     if not name:
@@ -160,6 +104,8 @@ def add_rss_subscribe(mtype, name, year,
                     return 3, "%s 获取剧集数失败，请确认该季是否存在" % media_info.get_title_string(), media_info
                 media_info.begin_season = season
                 media_info.total_episodes = total_episode
+            if rssid:
+                delete_rss_tv(rssid=rssid)
             insert_rss_tv(media_info=media_info,
                           total=media_info.total_episodes,
                           lack=media_info.total_episodes,
@@ -168,17 +114,19 @@ def add_rss_subscribe(mtype, name, year,
                           over_edition=over_edition,
                           rss_restype=rss_restype,
                           rss_pix=rss_pix,
-                          rss_keyword=rss_keyword,
+                          rss_rule=rss_rule,
                           state=state,
                           match=match)
         else:
+            if rssid:
+                delete_rss_movie(rssid=rssid)
             insert_rss_movie(media_info=media_info,
                              sites=sites,
                              search_sites=search_sites,
                              over_edition=over_edition,
                              rss_restype=rss_restype,
                              rss_pix=rss_pix,
-                             rss_keyword=rss_keyword,
+                             rss_rule=rss_rule,
                              state=state)
     else:
         # 模糊匹配
@@ -188,6 +136,8 @@ def add_rss_subscribe(mtype, name, year,
         if season:
             media_info.begin_season = int(season)
         if mtype == MediaType.MOVIE:
+            if rssid:
+                delete_rss_movie(rssid=rssid)
             insert_rss_movie(media_info=media_info,
                              state="R",
                              sites=sites,
@@ -195,8 +145,10 @@ def add_rss_subscribe(mtype, name, year,
                              over_edition=over_edition,
                              rss_restype=rss_restype,
                              rss_pix=rss_pix,
-                             rss_keyword=rss_keyword)
+                             rss_rule=rss_rule)
         else:
+            if rssid:
+                delete_rss_tv(rssid=rssid)
             insert_rss_tv(media_info=media_info,
                           total=0,
                           lack=0,
@@ -206,7 +158,7 @@ def add_rss_subscribe(mtype, name, year,
                           over_edition=over_edition,
                           rss_restype=rss_restype,
                           rss_pix=rss_pix,
-                          rss_keyword=rss_keyword,
+                          rss_rule=rss_rule,
                           match=match)
 
     return 0, "添加订阅成功", media_info

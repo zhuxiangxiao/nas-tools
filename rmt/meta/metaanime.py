@@ -24,6 +24,8 @@ class MetaAnime(MetaBase):
             if anitopy_info:
                 # 名称
                 name = anitopy_info.get("anime_title")
+                if name and name.find("/") != -1:
+                    name = name.split("/")[-1].strip()
                 if not name or name in self._anime_no_words or (len(name) < 5 and not is_chinese(name)):
                     anitopy_info = anitopy.parse("[ANIME]" + title)
                     if anitopy_info:
@@ -111,6 +113,8 @@ class MetaAnime(MetaBase):
                 if self.resource_pix:
                     if re.search(r'x', self.resource_pix, re.IGNORECASE):
                         self.resource_pix = re.split(r'[Xx]', self.resource_pix)[0] + "p"
+                    else:
+                        self.resource_pix = self.resource_pix.lower()
                 # 视频编码
                 self.video_encode = anitopy_info.get("video_term")
                 if isinstance(self.video_encode, list):
@@ -131,23 +135,27 @@ class MetaAnime(MetaBase):
         """
         if not title:
             return title
-        title = title.replace("【", "[").replace("】", "]")
+        title = title.replace("【", "[").replace("】", "]").strip()
         if re.search(r"新番|月?番", title):
             title = re.sub(".*新番.", "", title)
         else:
             title = re.sub(r"^[^]】]*[]】]", "", title).strip()
         names = title.split("]")
-        if len(names) > 1:
+        if len(names) > 1 and title.find("-") == -1:
             titles = []
             for name in names:
-                if not is_all_chinese(name[1:]):
-                    name = re.sub(r'[\u4e00-\u9fa5]', '', name)
+                left_char = ''
+                if name.startswith('['):
+                    left_char = '['
+                    name = name[1:]
                 if name and name.find("/") != -1:
                     if name.split("/")[-1].strip():
-                        titles.append("[%s" % name.split("/")[-1].strip())
+                        titles.append("%s%s" % (left_char, name.split("/")[-1].strip()))
                     else:
-                        titles.append("[%s" % name.split("/")[0].strip())
+                        titles.append("%s%s" % (left_char, name.split("/")[0].strip()))
                 else:
-                    titles.append(name.strip())
+                    if is_chinese(name) and not is_all_chinese(name):
+                        name = re.sub(r'[\u4e00-\u9fff]', '', name)
+                    titles.append("%s%s" % (left_char, name.strip()))
             return "]".join(titles)
         return title

@@ -4,22 +4,11 @@ from datetime import datetime
 import log
 from config import Config
 from pt.client.client import IDownloadClient
-from utils.functions import singleton
 from utils.types import MediaType
 
 
-@singleton
 class Transmission(IDownloadClient):
-    __trhost = None
-    __trport = None
-    __trusername = None
-    __trpassword = None
-    __tv_save_path = None
-    __tv_save_containerpath = None
-    __movie_save_path = None
-    __movie_save_containerpath = None
-    __anime_save_path = None
-    __anime_save_containerpath = None
+    
     # 参考transmission web，仅查询需要的参数，加速种子检索
     __trarg = ["id", "name", "status", "labels", "hashString", "totalSize", "percentDone", "addedDate", "trackerStats",
                "leftUntilDone", "rateDownload", "rateUpload", "recheckProgress", "rateDownload", "rateUpload",
@@ -27,45 +16,24 @@ class Transmission(IDownloadClient):
                "error", "errorString", "doneDate", "queuePosition", "activityDate"]
     trc = None
 
-    def __init__(self):
-        self.init_config()
-
-    def init_config(self):
+    def get_config(self):
+        # 读取配置文件
         config = Config()
         transmission = config.get_config('transmission')
         if transmission:
-            self.__trhost = transmission.get('trhost')
-            self.__trport = int(transmission.get('trport'))
-            self.__trusername = transmission.get('trusername')
-            self.__trpassword = transmission.get('trpassword')
-            # 解释下载目录
-            save_path = transmission.get('save_path')
-            if save_path:
-                if isinstance(save_path, str):
-                    self.__tv_save_path = save_path
-                    self.__movie_save_path = save_path
-                    self.__anime_save_path = save_path
-                else:
-                    self.__tv_save_path = save_path.get('tv')
-                    self.__movie_save_path = save_path.get('movie')
-                    self.__anime_save_path = save_path.get('anime')
-                    if not self.__anime_save_path:
-                        self.__anime_save_path = self.__tv_save_path
-            save_containerpath = transmission.get('save_containerpath')
-            if save_containerpath:
-                if isinstance(save_containerpath, str):
-                    self.__tv_save_containerpath = save_containerpath
-                    self.__movie_save_containerpath = save_containerpath
-                    self.__anime_save_containerpath = save_containerpath
-                else:
-                    self.__tv_save_containerpath = save_containerpath.get('tv')
-                    self.__movie_save_containerpath = save_containerpath.get('movie')
-                    self.__anime_save_containerpath = save_containerpath.get('anime')
-                    # 没有配置anime目录则使用tv目录
-                    if not self.__anime_save_containerpath:
-                        self.__anime_save_containerpath = self.__tv_save_containerpath
-            if self.__trhost and self.__trport:
-                self.trc = self.__login_transmission()
+            self.host = transmission.get('trhost')
+            self.port = int(transmission.get('trport'))
+            self.username = transmission.get('trusername')
+            self.password = transmission.get('trpassword')
+            self.save_path = transmission.get('save_path')
+            self.save_containerpath = transmission.get('save_containerpath')
+
+    def connect(self):
+        """
+        连接
+        """
+        if self.host and self.port:
+            self.trc = self.__login_transmission()
 
     def __login_transmission(self):
         """
@@ -74,10 +42,10 @@ class Transmission(IDownloadClient):
         """
         try:
             # 登录
-            trt = transmission_rpc.Client(host=self.__trhost,
-                                          port=self.__trport,
-                                          username=self.__trusername,
-                                          password=self.__trpassword,
+            trt = transmission_rpc.Client(host=self.host,
+                                          port=self.port,
+                                          username=self.username,
+                                          password=self.password,
                                           timeout=10)
             return trt
         except Exception as err:
@@ -117,7 +85,7 @@ class Transmission(IDownloadClient):
             ret_torrents.append(torrent)
         return ret_torrents
 
-    def get_completed_torrents(self, tag):
+    def get_completed_torrents(self, tag=None):
         """
         读取完成的种子信息
         :return: 种子信息列表
@@ -126,7 +94,7 @@ class Transmission(IDownloadClient):
             return []
         return self.get_torrents(status=["seeding", "seed_pending"], tag=tag)
 
-    def get_downloading_torrents(self, tag):
+    def get_downloading_torrents(self, tag=None):
         """
         读取下载中的种子信息
         :return: 种子信息列表
@@ -179,12 +147,7 @@ class Transmission(IDownloadClient):
             true_path = os.path.join(torrent.download_dir, torrent.name)
             if not true_path:
                 continue
-            if self.__tv_save_containerpath and true_path.startswith(self.__tv_save_path):
-                true_path = true_path.replace(str(self.__tv_save_path), str(self.__tv_save_containerpath))
-            if self.__movie_save_containerpath and true_path.startswith(self.__movie_save_path):
-                true_path = true_path.replace(str(self.__movie_save_path), str(self.__movie_save_containerpath))
-            if self.__anime_save_containerpath and true_path.startswith(self.__anime_save_path):
-                true_path = true_path.replace(str(self.__anime_save_path), str(self.__anime_save_containerpath))
+            true_path = self.get_replace_path(true_path)
             trans_tasks.append({'path': true_path, 'id': torrent.id})
         return trans_tasks
 
@@ -239,11 +202,11 @@ class Transmission(IDownloadClient):
         :param is_paused: 是否默认暂停，只有需要进行下一步控制时，才会添加种子时默认暂停
         """
         if mtype == MediaType.TV:
-            return self.trc.add_torrent(torrent=content, download_dir=self.__tv_save_path, paused=is_paused)
+            return self.trc.add_torrent(torrent=content, download_dir=self.tv_save_path, paused=is_paused)
         elif mtype == MediaType.MOVIE:
-            return self.trc.add_torrent(torrent=content, download_dir=self.__movie_save_path, paused=is_paused)
+            return self.trc.add_torrent(torrent=content, download_dir=self.movie_save_path, paused=is_paused)
         else:
-            return self.trc.add_torrent(torrent=content, download_dir=self.__anime_save_path, paused=is_paused)
+            return self.trc.add_torrent(torrent=content, download_dir=self.anime_save_path, paused=is_paused)
 
     def start_torrents(self, ids):
         """
@@ -274,6 +237,8 @@ class Transmission(IDownloadClient):
         删除种子
         """
         if not self.trc:
+            return False
+        if not ids:
             return False
         if isinstance(ids, list):
             ids = [int(x) for x in ids]

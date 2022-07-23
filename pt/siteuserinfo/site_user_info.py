@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import json
 import re
 from abc import ABCMeta, abstractmethod
 from urllib.parse import urljoin, urlsplit
@@ -9,6 +10,9 @@ from utils.http_utils import RequestUtils
 
 
 class ISiteUserInfo(metaclass=ABCMeta):
+    # 站点信息
+    site_name = None
+    site_url = None
     # 用户信息
     username = None
     userid = None
@@ -29,12 +33,16 @@ class ISiteUserInfo(metaclass=ABCMeta):
     uploaded_size = 0
     completed_size = 0
     incomplete_size = 0
+    # 做种人数, 种子大小
+    seeding_info = []
 
     # 用户详细信息
     user_level = None
     join_at = None
     bonus = 0.0
 
+    # 错误信息
+    err_msg = None
     # 内部数据
     _base_url = None
     _site_cookie = None
@@ -47,14 +55,17 @@ class ISiteUserInfo(metaclass=ABCMeta):
     _user_detail_page = "userdetails.php?id="
     _user_traffic_page = "index.php"
     _torrent_seeding_page = "getusertorrentlistajax.php?userid="
-    _session = requests.Session()
+    _torrent_seeding_params = None
 
-    def __init__(self, url, site_cookie, index_html):
+    def __init__(self, site_name, url, site_cookie, index_html, session=None):
         super().__init__()
         split_url = urlsplit(url)
+        self.site_name = site_name
+        self.site_url = url
         self._base_url = f"{split_url.scheme}://{split_url.netloc}"
         self._site_cookie = site_cookie
         self._index_html = index_html
+        self._session = session if session else requests.Session()
 
     def site_schema(self):
         """
@@ -69,23 +80,32 @@ class ISiteUserInfo(metaclass=ABCMeta):
         :return:
         """
         self._parse_site_page(self._index_html)
-        if self._brief_page:
-            self._parse_user_base_info(self._get_page_content(urljoin(self._base_url, self._brief_page)))
+        self._parse_user_base_info(self._index_html)
         if self._user_traffic_page:
             self._parse_user_traffic_info(self._get_page_content(urljoin(self._base_url, self._user_traffic_page)))
         if self._user_detail_page:
             self._parse_user_detail_info(self._get_page_content(urljoin(self._base_url, self._user_detail_page)))
 
+        seeding_pages = []
         if self._torrent_seeding_page:
-            # 第一页
-            next_page = self._parse_user_torrent_seeding_info(
-                self._get_page_content(urljoin(self._base_url, self._torrent_seeding_page)))
+            if isinstance(self._torrent_seeding_page, list):
+                seeding_pages.extend(self._torrent_seeding_page)
+            else:
+                seeding_pages.append(self._torrent_seeding_page)
 
-            # 其他页处理
-            while next_page:
+            for seeding_page in seeding_pages:
+                # 第一页
                 next_page = self._parse_user_torrent_seeding_info(
-                    self._get_page_content(urljoin(urljoin(self._base_url, self._torrent_seeding_page), next_page)),
-                    multi_page=True)
+                    self._get_page_content(urljoin(self._base_url, seeding_page), self._torrent_seeding_params))
+
+                # 其他页处理
+                while next_page:
+                    next_page = self._parse_user_torrent_seeding_info(
+                        self._get_page_content(urljoin(urljoin(self._base_url, seeding_page), next_page),
+                                               self._torrent_seeding_params),
+                        multi_page=True)
+
+        self.seeding_info = json.dumps(self.seeding_info)
 
     @staticmethod
     def _prepare_html_text(html_text):
@@ -94,12 +114,17 @@ class ISiteUserInfo(metaclass=ABCMeta):
         """
         return re.sub(r"#\d+", "", re.sub(r"\d+px", "", html_text))
 
-    def _get_page_content(self, url):
+    def _get_page_content(self, url, params=None):
         """
-        :param url:
+        :param url: 网页地址
+        :param params: post参数
         :return:
         """
-        res = RequestUtils(cookies=self._site_cookie, session=self._session).get_res(url=url)
+        if params:
+            res = RequestUtils(cookies=self._site_cookie, session=self._session, timeout=60).post_res(url=url,
+                                                                                                      params=params)
+        else:
+            res = RequestUtils(cookies=self._site_cookie, session=self._session, timeout=60).get_res(url=url)
         if res and res.status_code == 200:
             if "charset=utf-8" in res.text or "charset=UTF-8" in res.text:
                 res.encoding = "UTF-8"

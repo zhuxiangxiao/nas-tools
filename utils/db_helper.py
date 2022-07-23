@@ -3,7 +3,7 @@ import threading
 
 import log
 from config import Config
-from utils.functions import singleton
+from utils.functions import singleton, get_dir_level1_files
 from utils.db_pool import DBPool
 
 lock = threading.Lock()
@@ -18,6 +18,8 @@ class DBHelper:
     def __init__(self):
         self.init_config()
         self.__init_tables()
+        self.__cleardata()
+        self.__initdata()
 
     def init_config(self):
         config = Config()
@@ -28,7 +30,7 @@ class DBHelper:
         self.__db_path = os.path.join(os.path.dirname(config_path), 'user.db')
         self.__pools = DBPool(
             max_active=5, max_wait=20, init_size=5, db_type="SQLite3",
-            **{'database': self.__db_path, 'check_same_thread': False})
+            **{'database': self.__db_path, 'check_same_thread': False, 'timeout': 15})
 
     def __init_tables(self):
         conn = self.__pools.get()
@@ -63,7 +65,6 @@ class DBHelper:
                                    UPLOAD_VOLUME_FACTOR REAL,
                                    DOWNLOAD_VOLUME_FACTOR REAL,
                                    NOTE     TEXT);''')
-
             # RSS下载记录表
             cursor.execute('''CREATE TABLE IF NOT EXISTS RSS_TORRENTS
                                    (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
@@ -161,101 +162,152 @@ class DBHelper:
                                    EXCLUDE  TEXT,
                                    SIZE    TEXT,
                                    NOTE    TEXT);''')
-            # 搜索过滤规则表
-            cursor.execute('''CREATE TABLE IF NOT EXISTS CONFIG_SEARCH_RULE
+            # 过滤规则组表
+            cursor.execute('''CREATE TABLE IF NOT EXISTS CONFIG_FILTER_GROUP
                                    (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   GROUP_NAME  TEXT,
+                                   IS_DEFAULT    TEXT,
+                                   NOTE    TEXT);''')
+            # 过滤规则明细
+            cursor.execute('''CREATE TABLE IF NOT EXISTS CONFIG_FILTER_RULES
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   GROUP_ID  TEXT,
+                                   ROLE_NAME  TEXT,
+                                   PRIORITY  TEXT,                                   
                                    INCLUDE  TEXT,
                                    EXCLUDE  TEXT,
-                                   SIZE    TEXT,
+                                   SIZE_LIMIT    TEXT,
                                    NOTE    TEXT);''')
-            # RSS全局规则表
-            cursor.execute('''CREATE TABLE IF NOT EXISTS CONFIG_RSS_RULE
-                                               (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                               NOTE    TEXT);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_CONFIG_FILTER_RULES_GROUP ON CONFIG_FILTER_RULES (GROUP_ID);''')
             # 目录同步记录表
             cursor.execute('''CREATE TABLE IF NOT EXISTS SYNC_HISTORY
-                                               (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                               PATH    TEXT,
-                                               SRC    TEXT,
-                                               DEST    TEXT);''')
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   PATH    TEXT,
+                                   SRC    TEXT,
+                                   DEST    TEXT);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SYNC_HISTORY ON SYNC_HISTORY (PATH);''')
-
             # 用户表
             cursor.execute('''CREATE TABLE IF NOT EXISTS CONFIG_USERS
-                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                                           NAME    TEXT,
-                                                           PASSWORD    TEXT,
-                                                           PRIS    TEXT);''')
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   NAME    TEXT,
+                                   PASSWORD    TEXT,
+                                   PRIS    TEXT);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_CONFIG_USERS ON CONFIG_USERS (NAME);''')
-
-            # 消息中心
-            cursor.execute('''CREATE TABLE IF NOT EXISTS MESSAGES
-                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                                           LEVEL    TEXT,
-                                                           TITLE    TEXT,
-                                                           CONTENT    TEXT,
-                                                           DATE     TEXT);''')
-            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_MESSAGES_DATE ON MESSAGES (DATE);''')
-
             # 站点流量历史
             cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_STATISTICS_HISTORY
-                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                                           SITE    TEXT,
-                                                           DATE    TEXT,
-                                                           USER_LEVEL    TEXT,
-                                                           UPLOAD    TEXT,
-                                                           DOWNLOAD     TEXT,
-                                                           RATIO     TEXT,
-                                                           SEEDING     INTEGER default 0,
-                                                           LEECHING     INTEGER default 0,
-                                                           SEEDING_SIZE     INTEGER default 0,
-                                                           BONUS     REAL default 0.0,
-                                                           URL     TEXT);''')
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   SITE    TEXT,
+                                   DATE    TEXT,
+                                   USER_LEVEL    TEXT,
+                                   UPLOAD    TEXT,
+                                   DOWNLOAD     TEXT,
+                                   RATIO     TEXT,
+                                   SEEDING     INTEGER default 0,
+                                   LEECHING     INTEGER default 0,
+                                   SEEDING_SIZE     INTEGER default 0,
+                                   BONUS     REAL default 0.0,
+                                   URL     TEXT);''')
 
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_STATISTICS_HISTORY_DS ON SITE_STATISTICS_HISTORY (DATE, URL);''')
+            # 唯一约束
+            cursor.execute('''CREATE UNIQUE INDEX IF NOT EXISTS UN_INDX_SITE_STATISTICS_HISTORY_DS ON SITE_STATISTICS_HISTORY (DATE, URL);''')
+
+            # 实时站点做种数据
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_USER_SEEDING_INFO
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   SITE    TEXT,
+                                   SEEDING_INFO TEXT default '[]',
+                                   UPDATE_AT TEXT,
+                                   URL     TEXT);''')
+            cursor.execute(
+                '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_SEEDING_INFO_URL ON SITE_USER_SEEDING_INFO (URL);''')
+            cursor.execute(
+                '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_SEEDING_INFO_SITE ON SITE_USER_SEEDING_INFO (SITE);''')
+            # 唯一约束
+            cursor.execute(
+                '''CREATE UNIQUE INDEX IF NOT EXISTS UN_INDX_SITE_USER_SEEDING_INFO_URL ON SITE_USER_SEEDING_INFO (URL);''')
 
             # 实时站点数据
             cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_USER_STATISTICS
-                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                                           SITE    TEXT,
-                                                           USERNAME    TEXT,
-                                                           USER_LEVEL    TEXT,
-                                                           JOIN_AT    TEXT,
-                                                           UPDATE_AT    TEXT,
-                                                           UPLOAD    INTEGER,
-                                                           DOWNLOAD     INTEGER,
-                                                           RATIO     REAL,
-                                                           SEEDING     INTEGER,
-                                                           LEECHING     INTEGER,
-                                                           SEEDING_SIZE     INTEGER,
-                                                           BONUS     REAL,
-                                                           URL     TEXT);''')
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   SITE    TEXT,
+                                   USERNAME    TEXT,
+                                   USER_LEVEL    TEXT,
+                                   JOIN_AT    TEXT,
+                                   UPDATE_AT    TEXT,
+                                   UPLOAD    INTEGER,
+                                   DOWNLOAD     INTEGER,
+                                   RATIO     REAL,
+                                   SEEDING     INTEGER,
+                                   LEECHING     INTEGER,
+                                   SEEDING_SIZE     INTEGER,
+                                   BONUS     REAL,
+                                   URL     TEXT);''')
             cursor.execute(
                 '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_STATISTICS_URL ON SITE_USER_STATISTICS (URL);''')
             cursor.execute(
                 '''CREATE INDEX IF NOT EXISTS INDX_SITE_USER_STATISTICS_SITE ON SITE_USER_STATISTICS (SITE);''')
-            # 删除重复数据
+            # 唯一约束
             cursor.execute(
-                """DELETE FROM SITE_USER_STATISTICS WHERE EXISTS (SELECT 1 FROM SITE_USER_STATISTICS p2 WHERE SITE_USER_STATISTICS.URL = p2.URL AND SITE_USER_STATISTICS.rowid < p2.rowid);""")
-
+                '''CREATE UNIQUE INDEX IF NOT EXISTS UN_INDX_SITE_USER_STATISTICS_URL ON SITE_USER_STATISTICS (URL);''')
             # 下载历史
             cursor.execute('''CREATE TABLE IF NOT EXISTS DOWNLOAD_HISTORY
-                                                           (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
-                                                           TITLE    TEXT,
-                                                           YEAR    TEXT,
-                                                           TYPE    TEXT,
-                                                           TMDBID     TEXT,
-                                                           VOTE     TEXT,
-                                                           POSTER     TEXT,
-                                                           OVERVIEW    TEXT,
-                                                           TORRENT     TEXT,
-                                                           ENCLOSURE     TEXT,
-                                                           SITE     TEXT,
-                                                           DESC     TEXT,
-                                                           DATE     TEXT);''')
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   TITLE    TEXT,
+                                   YEAR    TEXT,
+                                   TYPE    TEXT,
+                                   TMDBID     TEXT,
+                                   VOTE     TEXT,
+                                   POSTER     TEXT,
+                                   OVERVIEW    TEXT,
+                                   TORRENT     TEXT,
+                                   ENCLOSURE     TEXT,
+                                   SITE     TEXT,
+                                   DESC     TEXT,
+                                   DATE     TEXT);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_DOWNLOAD_HISTORY_DATE ON DOWNLOAD_HISTORY (DATE);''')
             cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_DOWNLOAD_HISTORY_TITLE ON DOWNLOAD_HISTORY (TITLE);''')
-
+            # 刷流任务表
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_BRUSH_TASK
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   NAME    TEXT,
+                                   SITE    TEXT,
+                                   FREELEECH    TEXT,
+                                   RSS_RULE     TEXT,
+                                   REMOVE_RULE     TEXT,
+                                   SEED_SIZE     TEXT,
+                                   INTEVAL    TEXT,
+                                   DOWNLOADER     TEXT,
+                                   TRANSFER     TEXT,
+                                   DOWNLOAD_COUNT     TEXT,
+                                   REMOVE_COUNT     TEXT,
+                                   DOWNLOAD_SIZE     TEXT,
+                                   UPLOAD_SIZE     TEXT,
+                                   STATE     TEXT,
+                                   LST_MOD_DATE     TEXT);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_BRUSH_TASK_NAME ON SITE_BRUSH_TASK (NAME);''')
+            # 刷流任务明细表
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_BRUSH_TORRENTS
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   TASK_ID    TEXT,
+                                   TORRENT_NAME    TEXT,
+                                   TORRENT_SIZE     TEXT,
+                                   ENCLOSURE    TEXT,
+                                   DOWNLOADER     TEXT,
+                                   DOWNLOAD_ID    TEXT,
+                                   LST_MOD_DATE     TEXT);''')
+            cursor.execute('''CREATE INDEX IF NOT EXISTS INDX_SITE_BRUSH_TORRENTS_TASKID ON SITE_BRUSH_TORRENTS (TASK_ID);''')
+            # 自定义下载器表
+            cursor.execute('''CREATE TABLE IF NOT EXISTS SITE_BRUSH_DOWNLOADERS
+                                   (ID INTEGER PRIMARY KEY AUTOINCREMENT     NOT NULL,
+                                   NAME    TEXT,
+                                   TYPE    TEXT,
+                                   HOST    TEXT,
+                                   PORT     TEXT,
+                                   USERNAME    TEXT,
+                                   PASSWORD     TEXT,
+                                   SAVE_DIR    TEXT,
+                                   NOTE     TEXT);''')
             # 提交
             conn.commit()
 
@@ -265,7 +317,40 @@ class DBHelper:
             cursor.close()
             self.__pools.free(conn)
 
-    def excute(self, sql, data):
+    def __cleardata(self):
+        self.excute(
+                """DELETE FROM SITE_USER_STATISTICS 
+                    WHERE EXISTS (SELECT 1 
+                        FROM SITE_USER_STATISTICS p2 
+                        WHERE SITE_USER_STATISTICS.URL = p2.URL 
+                        AND SITE_USER_STATISTICS.rowid < p2.rowid);""")
+        self.excute(
+                """DELETE FROM SITE_STATISTICS_HISTORY 
+                    WHERE EXISTS (SELECT 1 
+                        FROM SITE_STATISTICS_HISTORY p2 
+                        WHERE SITE_STATISTICS_HISTORY.URL = p2.URL 
+                        AND SITE_STATISTICS_HISTORY.DATE = p2.DATE 
+                        AND SITE_STATISTICS_HISTORY.rowid < p2.rowid);""")
+
+    def __initdata(self):
+        config = Config().get_config()
+        init_files = config.get("app", {}).get("init_files") or []
+        config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "config")
+        sql_files = get_dir_level1_files(in_path=config_dir, exts=".sql")
+        config_flag = False
+        for sql_file in sql_files:
+            if os.path.basename(sql_file) not in init_files:
+                config_flag = True
+                with open(sql_file, "r", encoding="utf-8") as f:
+                    sql_list = f.read().split(';\n')
+                    for sql in sql_list:
+                        self.excute(sql)
+                init_files.append(os.path.basename(sql_file))
+        if config_flag:
+            config['app']['init_files'] = init_files
+            Config().save_config(config)
+
+    def excute(self, sql, data=None):
         if not sql:
             return False
         conn = self.__pools.get()
@@ -337,7 +422,8 @@ def update_by_sql(sql, data=None):
     :param data: 数据，需为列表或者元祖
     :return: 执行状态
     """
-    return DBHelper().excute(sql, data)
+    with lock:
+        return DBHelper().excute(sql, data)
 
 
 def update_by_sql_batch(sql, data_list):
@@ -347,4 +433,5 @@ def update_by_sql_batch(sql, data_list):
     :param data_list: 数据列表
     :return: 执行状态
     """
-    return DBHelper().excute_many(sql, data_list)
+    with lock:
+        return DBHelper().excute_many(sql, data_list)

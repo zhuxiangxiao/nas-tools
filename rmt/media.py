@@ -29,8 +29,8 @@ class Media:
     meta = None
     __rmt_match_mode = None
     __search_keyword = None
-    __space_chars = r"\.|-|/|:"
-    __empty_chars = r"'|,"
+    __space_chars = r"\.|,|-|/|:|："
+    __empty_chars = r"'|’|!|！"
 
     def __init__(self):
         self.init_config()
@@ -152,9 +152,9 @@ class Media:
             if info:
                 info['media_type'] = MediaType.MOVIE
                 log.info("【META】%s 识别到 电影：TMDBID=%s, 名称=%s, 上映日期=%s" % (file_media_name,
-                                                                  info.get('id'),
-                                                                  info.get('title'),
-                                                                  info.get('release_date')))
+                                                                        info.get('id'),
+                                                                        info.get('title'),
+                                                                        info.get('release_date')))
         else:
             # 有当前季和当前季集年份，使用精确匹配
             if media_year and season_number:
@@ -169,9 +169,9 @@ class Media:
             if info:
                 info['media_type'] = MediaType.TV
                 log.info("【META】%s 识别到 电视剧：TMDBID=%s, 名称=%s, 首播日期=%s" % (file_media_name,
-                                                                   info.get('id'),
-                                                                   info.get('name'),
-                                                                   info.get('first_air_date')))
+                                                                         info.get('id'),
+                                                                         info.get('name'),
+                                                                         info.get('first_air_date')))
         # 返回
         if info:
             return info
@@ -350,7 +350,7 @@ class Media:
         :return: 匹配的媒体信息
         """
         try:
-            multis = self.search.multi({"query": file_media_name})
+            multis = self.search.multi({"query": file_media_name}) or []
         except TMDbException as err:
             log.error(f"【META】连接TMDB出错：{str(err)}")
             return None
@@ -463,11 +463,14 @@ class Media:
         else:
             if mtype == MediaType.MOVIE:
                 tmdb_info = self.__get_tmdb_movie_detail(tmdbid)
-                tmdb_info['media_type'] = MediaType.MOVIE
+                if tmdb_info:
+                    tmdb_info['media_type'] = MediaType.MOVIE
             else:
                 tmdb_info = self.__get_tmdb_tv_detail(tmdbid)
-                tmdb_info['media_type'] = MediaType.TV
-            tmdb_info['genre_ids'] = self.__get_genre_ids_from_detail(tmdb_info.get('genres'))
+                if tmdb_info:
+                    tmdb_info['media_type'] = MediaType.TV
+            if tmdb_info:
+                tmdb_info['genre_ids'] = self.__get_genre_ids_from_detail(tmdb_info.get('genres'))
         return tmdb_info
 
     def get_tmdb_infos(self, title, year=None, mtype: MediaType = None, num=6):
@@ -499,7 +502,7 @@ class Media:
         if not title:
             return []
         ret_infos = []
-        multis = self.search.multi({"query": title})
+        multis = self.search.multi({"query": title}) or []
         for multi in multis:
             if multi.get("media_type") in ["movie", "tv"]:
                 multi['media_type'] = MediaType.MOVIE if multi.get("media_type") == "movie" else MediaType.TV
@@ -514,9 +517,9 @@ class Media:
             return []
         ret_infos = []
         if year:
-            movies = self.search.movies({"query": title, "year": year})
+            movies = self.search.movies({"query": title, "year": year}) or []
         else:
-            movies = self.search.movies({"query": title})
+            movies = self.search.movies({"query": title}) or []
         for movie in movies:
             if title in movie.get("title"):
                 movie['media_type'] = MediaType.MOVIE
@@ -531,22 +534,23 @@ class Media:
             return []
         ret_infos = []
         if year:
-            tvs = self.search.tv_shows({"query": title, "first_air_date_year": year})
+            tvs = self.search.tv_shows({"query": title, "first_air_date_year": year}) or []
         else:
-            tvs = self.search.tv_shows({"query": title})
+            tvs = self.search.tv_shows({"query": title}) or []
         for tv in tvs:
             if title in tv.get("name"):
                 tv['media_type'] = MediaType.TV
                 ret_infos.append(tv)
         return ret_infos
 
-    def get_media_info(self, title, subtitle=None, mtype=None, strict=None):
+    def get_media_info(self, title, subtitle=None, mtype=None, strict=None, cache=True):
         """
         只有名称信息，判别是电影还是电视剧并搜刮TMDB信息，用于种子名称识别
         :param title: 种子名称
         :param subtitle: 种子副标题
         :param mtype: 类型：电影、电视剧、动漫
         :param strict: 是否严格模式，为true时，不会再去掉年份再查一次
+        :param cache: 是否使用缓存，默认TRUE
         :return: 带有TMDB信息的MetaInfo对象
         """
         if not title:
@@ -561,7 +565,7 @@ class Media:
             meta_info.type = mtype
         media_key = "[%s]%s-%s-%s" % (
             meta_info.type.value, meta_info.get_name(), meta_info.year, meta_info.begin_season)
-        if not self.meta.get_meta_data_by_key(media_key):
+        if not cache or not self.meta.get_meta_data_by_key(media_key):
             # 缓存中没有开始查询
             if meta_info.type != MediaType.TV and not meta_info.year:
                 file_media_info = self.__search_multi_tmdb(file_media_name=meta_info.get_name())
@@ -856,7 +860,7 @@ class Media:
                      "air_date": season.get("air_date")})
         return total_seasons
 
-    def get_tmdb_season_episodes_num(self, sea, tv_info=None, tmdbid=None):
+    def get_tmdb_season_episodes_num(self, sea: int, tv_info=None, tmdbid=None):
         """
         从TMDB的季信息中获得具体季有多少集
         :param sea: 季号，数字
@@ -875,7 +879,7 @@ class Media:
             return 0
         for season in seasons:
             if season.get("season_number") == sea:
-                return season.get("episode_count")
+                return int(season.get("episode_count"))
         return 0
 
     @staticmethod

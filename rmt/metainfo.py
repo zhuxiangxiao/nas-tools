@@ -7,7 +7,7 @@ from utils.types import MediaType
 
 def MetaInfo(title, subtitle=None, mtype=None):
     """
-    媒体识别入口，根据名称和副标题，判断是哪种类型的识别，返回对应对象
+    媒体整理入口，根据名称和副标题，判断是哪种类型的识别，返回对应对象
     :param title: 标题、种子名、文件名
     :param subtitle: 副标题、描述
     :param mtype: 指定识别类型，为空则自动识别类型
@@ -27,9 +27,9 @@ def is_anime(name):
     """
     if not name:
         return False
-    if re.search(r'\[[0-9XVPI-]+]', name, re.IGNORECASE):
+    if re.search(r'\[[0-9XVPI-]+]\[', name, re.IGNORECASE):
         return True
-    if re.search(r'【[0-9XVPI-]+】', name, re.IGNORECASE):
+    if re.search(r'【[0-9XVPI-]+】【', name, re.IGNORECASE):
         return True
     if re.search(r'\s+-\s+\d{1,4}\s+', name, re.IGNORECASE):
         return True

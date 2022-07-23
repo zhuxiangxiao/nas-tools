@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import socket
+import threading
 import subprocess
 import time
 import platform
@@ -13,18 +14,21 @@ from enum import Enum
 from utils.types import OsType
 
 INSTANCES = {}
+lock = threading.RLock()
 
 
 # 单例模式注解
 def singleton(cls):
-    # 单下划线的作用是这个变量只能在当前模块里访问,仅仅是一种提示作用
     # 创建字典用来保存类的实例对象
     global INSTANCES
 
     def _singleton(*args, **kwargs):
         # 先判断这个类有没有对象
         if cls not in INSTANCES:
-            INSTANCES[cls] = cls(*args, **kwargs)  # 创建一个对象,并保存到字典当中
+            with lock:
+                if cls not in INSTANCES:
+                    INSTANCES[cls] = cls(*args, **kwargs)
+                    pass
         # 将实例对象返回
         return INSTANCES[cls]
 
@@ -172,6 +176,19 @@ def get_dir_files(in_path, exts="", filesize=0, episode_format=None):
         if filesize and os.path.getsize(in_path) < filesize:
             return []
         ret_list.append(in_path)
+    return ret_list
+
+
+# 查询目录下的文件（只查询一级）
+def get_dir_level1_files(in_path, exts=""):
+    ret_list = []
+    if not os.path.exists(in_path):
+        return []
+    for file in os.listdir(in_path):
+        path = os.path.join(in_path, file)
+        if os.path.isfile(path):
+            if not exts or os.path.splitext(file)[-1].lower() in exts:
+                ret_list.append(path)
     return ret_list
 
 
@@ -453,3 +470,32 @@ def max_ele(a, b):
     if not b:
         return a
     return max(a, b)
+
+
+def str_int(text):
+    """
+    web字符串转int
+    :param text:
+    :return:
+    """
+    int_val = 0
+    try:
+        int_val = int(text.strip().replace(',', ''))
+    except Exception as e:
+        print(str(e))
+
+    return int_val
+
+
+def str_float(text):
+    """
+    web字符串转float
+    :param text:
+    :return:
+    """
+    float_val = 0.0
+    try:
+        float_val = float(text.strip().replace(',', ''))
+    except Exception as e:
+        print(str(e))
+    return float_val

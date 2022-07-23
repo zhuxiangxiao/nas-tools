@@ -278,12 +278,12 @@ class Sync(object):
         for monpath in self.sync_dir_config.keys():
             if monpath and os.path.exists(monpath):
                 try:
-                    if self.__sync_sys == OsType.LINUX:
-                        # linux
-                        observer = Observer()
+                    if self.__sync_sys == OsType.WINDOWS:
+                        # 考虑到windows的docker需要直接指定才能生效(修改配置文件为windows)
+                        observer = PollingObserver(timeout=10)
                     else:
-                        # 其他
-                        observer = PollingObserver()
+                        # 内部处理系统操作类型选择最优解
+                        observer = Observer(timeout=10)
                     self.__observer.append(observer)
                     observer.schedule(FileMonitorHandler(monpath, self), path=monpath, recursive=True)
                     observer.setDaemon(True)

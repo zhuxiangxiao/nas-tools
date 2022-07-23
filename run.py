@@ -3,6 +3,7 @@ import signal
 
 import log
 from config import Config
+from pt.brushtask import BrushTask
 from service.run import run_monitor, stop_monitor
 from service.run import run_scheduler, stop_scheduler
 from utils.check_config import check_config
@@ -25,6 +26,7 @@ def sigal_handler(num, stack):
 
 
 if __name__ == "__main__":
+
     # 参数
     os.environ['TZ'] = 'Asia/Shanghai'
     log.console("配置文件地址：%s" % os.environ.get('NASTOOL_CONFIG'))
@@ -47,6 +49,9 @@ if __name__ == "__main__":
 
     # 启动监控服务
     run_monitor()
+
+    # 启动刷流服务
+    BrushTask()
 
     # 启动主WEB服务
     FlaskApp().run_service()

@@ -5,12 +5,12 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures._base import as_completed
 
 import log
+from pt.filterrules import FilterRule
 from pt.torrent import Torrent
 from rmt.media import Media
 from rmt.metainfo import MetaInfo
-from utils.functions import str_filesize, tag_value
+from utils.functions import tag_value, str_filesize
 from utils.http_utils import RequestUtils
-from utils.sqls import get_config_search_rule
 from utils.types import MediaType
 
 
@@ -18,24 +18,15 @@ class IIndexer(metaclass=ABCMeta):
     media = None
     index_type = None
     api_key = None
-    __res_type = None
-    __space_chars = r"\.|-|/|:|："
+    filterrule = None
+    __space_chars = r"\.|-|/|:|：|'|‘|!|！|～"
+    __reverse_title_sites = ['keepfriends']
+    __invalid_description_sites = ['tjupt']
 
     def __init__(self):
         self.media = Media()
+        self.filterrule = FilterRule()
         self.init_config()
-        self.init_res_type()
-
-    def init_res_type(self):
-        res_type = get_config_search_rule()
-        if res_type:
-            if res_type[0][0] or res_type[0][1] or res_type[0][2] or res_type[0][3]:
-                include = str(res_type[0][0]).split("\n")
-                exclude = str(res_type[0][1]).split("\n")
-                note = str(res_type[0][2]).split("\n")
-                self.__res_type = {"include": include, "exclude": exclude, "note": note, "size": res_type[0][3]}
-            else:
-                self.__res_type = None
 
     @abstractmethod
     def init_config(self):
@@ -131,11 +122,18 @@ class IIndexer(metaclass=ABCMeta):
         # 从检索结果中匹配符合资源条件的记录
         index_sucess = 0
         for item in result_array:
-            # 获取属性
-            torrent_name = item.get('title')
+            # 这此站标题和副标题相反
+            if indexer_name in self.__reverse_title_sites:
+                torrent_name = item.get('description')
+                description = item.get('title')
+            else:
+                torrent_name = item.get('title')
+                description = item.get('description')
+            # 这些站副标题无意义，需要去除
+            if indexer_name in self.__invalid_description_sites:
+                description = ""
             enclosure = item.get('enclosure')
             size = item.get('size')
-            description = item.get('description')
             seeders = item.get('seeders')
             peers = item.get('peers')
             page_url = item.get('page_url')
@@ -147,40 +145,50 @@ class IIndexer(metaclass=ABCMeta):
                 log.info(f"【{self.index_type}】{torrent_name} 做种数为0")
                 continue
 
-            # 检查资源类型
-            if match_type == 1:
-                match_flag, res_order = Torrent.check_site_resouce_filter(torrent_name, description, self.__res_type)
-                if not match_flag:
-                    log.info(f"【{self.index_type}】{torrent_name} 不符合过滤规则")
-                    continue
-            else:
-                res_order = Torrent.check_site_resouce_order(torrent_name, description, self.__res_type)
-
             # 识别种子名称
             meta_info = MetaInfo(title=torrent_name, subtitle=description)
             if not meta_info.get_name():
+                log.info(f"【{self.index_type}】{torrent_name} 无法识别到名称")
                 continue
 
             if meta_info.type == MediaType.TV and filter_args.get("type") == MediaType.MOVIE:
-                log.info(f"【{self.index_type}】{torrent_name} 是 {meta_info.type.value}，不匹配类型：{filter_args.get('type').value}")
+                log.info(
+                    f"【{self.index_type}】{torrent_name} 是 {meta_info.type.value}，不匹配类型：{filter_args.get('type').value}")
                 continue
+
+            # 检查过滤规则匹配，使用默认规则
+            if filter_args.get("rule"):
+                match_flag, res_order, _ = self.filterrule.check_rules(meta_info=meta_info,
+                                                                       torrent_size=size,
+                                                                       rolegroup=filter_args.get("rule"))
+                if not match_flag:
+                    log.info(f"【{self.index_type}】{torrent_name} {str_filesize(size)} 不符合订阅过滤规则")
+                    continue
+            else:
+                match_flag, res_order, _ = self.filterrule.check_rules(meta_info=meta_info,
+                                                                       torrent_size=size)
+                if match_type == 1 and not match_flag:
+                    log.info(f"【{self.index_type}】{torrent_name} {str_filesize(size)} 不符合默认过滤规则")
+                    continue
 
             # 有高级过滤条件时，先过滤一遍
             if not Torrent.check_torrent_filter(meta_info, filter_args, uploadvolumefactor, downloadvolumefactor):
+                log.info(f"【{self.index_type}】{torrent_name} 不符合高级过滤条件")
                 continue
 
             # 识别媒体信息
             if match_type != 2:
                 media_info = self.media.get_media_info(title=torrent_name, subtitle=description)
                 if not media_info or not media_info.tmdb_info:
-                    log.debug(f"【{self.index_type}】{torrent_name} 未识别到媒体信息")
+                    log.info(f"【{self.index_type}】{torrent_name} 未识别到媒体信息")
                     continue
 
                 # 类型
                 if filter_args.get("type"):
                     if filter_args.get("type") == MediaType.TV and media_info.type == MediaType.MOVIE \
                             or filter_args.get("type") == MediaType.MOVIE and media_info.type == MediaType.TV:
-                        log.info(f"【{self.index_type}】{torrent_name} 是 {media_info.type.value}，不匹配类型：{filter_args.get('type').value}")
+                        log.info(
+                            f"【{self.index_type}】{torrent_name} 是 {media_info.type.value}，不匹配类型：{filter_args.get('type').value}")
                         continue
 
                 # 名称是否匹配
@@ -199,12 +207,6 @@ class IIndexer(metaclass=ABCMeta):
                     # 非全匹配模式，找出来的全要，不过滤名称
                     pass
 
-                # 判断文件大小是否匹配，只针对电影
-                if match_type == 1:
-                    if not Torrent.is_torrent_match_size(media_info, self.__res_type, size):
-                        log.info(
-                            f"【{self.index_type}】{media_info.type.value}：{media_info.get_title_string()} {str_filesize(size)} 不符合大小要求")
-                        continue
             else:
                 media_info = meta_info
 
@@ -216,6 +218,7 @@ class IIndexer(metaclass=ABCMeta):
                 continue
 
             # 匹配到了
+            log.info(f"【{self.index_type}】{torrent_name} 匹配成功")
             media_info.set_torrent_info(site=indexer_name,
                                         site_order=order_seq,
                                         enclosure=enclosure,
