@@ -218,7 +218,7 @@
                         {% else %}
                             <span class="badge bg-success me-1"></span>
                         {% endif %}
-                      <img onclick="navmenu('statistics?refresh_site={{ item[0] }}')" title="点击刷新站点数据" class="rounded me-2 d-none d-md-block" src="{{ item[12] }}/favicon.ico" width="24" height="24" alt=""
+                      <img onclick="navmenu('statistics?refresh_site={{ item[0] }}')" title="点击刷新站点数据" class="rounded me-2 d-none d-md-block" src="{{ item[13] }}" width="24" height="24" alt=""
                         onerror="this.src='../static/img/pt.jpg'" style="cursor:pointer"/>
                       <div class="flex-fill">
                         <div class="font-weight-medium"><a href="{{ item[12] }}" target="_blank">{{ item[0] }}</a></div>
@@ -777,7 +777,10 @@
                 }
             },
             xaxis: {
-                tickAmount: 10
+                tickAmount: 10,
+                title: {
+                    text:"做种人数"
+                }
             },
             yaxis: {
                 tickAmount: 7,
@@ -786,6 +789,23 @@
                         return humanFileSize(value)
                     }
                 }
+            },
+            annotations: {
+                xaxis: [{
+                    x: 30,
+                    fillColor: '#B3F7CA',
+                    opacity: 0.4,
+                    label: {
+                        borderColor: '#B3F7CA',
+                        style: {
+                            fontSize: '10px',
+                            color: '#fff',
+                            background: '#00E396',
+                        },
+                        offsetY: -10,
+                        text: '',
+                    }
+                }]
             },
             tooltip: {
                 x: {
@@ -864,12 +884,39 @@
                         $('#site-seeding-info').modal("show");
 
                         window.setTimeout(function () {
+                            let seed_less_30 = 0
+                            let max_seeder = 0
+                            for (let seed of ret.seeding_info) {
+                                if (seed[0] < 30) {
+                                    seed_less_30++;
+                                }
+                                if (seed[0] > max_seeder) {
+                                    max_seeder = seed[0]
+                                }
+                            }
                             chart_seeding_info.updateOptions(
                                 {
                                     series: [{
                                         name: "种子体积",
                                         data: ret.seeding_info
-                                    }]
+                                    }],
+                                    annotations: {
+                                        xaxis: [{
+                                            x: Math.min(30, max_seeder),
+                                            fillColor: '#B3F7CA',
+                                            opacity: 0.4,
+                                            label: {
+                                                borderColor: '#B3F7CA',
+                                                style: {
+                                                    fontSize: '10px',
+                                                    color: '#fff',
+                                                    background: '#00E396',
+                                                },
+                                                offsetY: -10,
+                                                text: '小于30人做种 种子数：' + seed_less_30 + ' (' + ret.seeding_info.length + ')',
+                                            }
+                                        }]
+                                    },
                                 }, true, true, false
                             );
 

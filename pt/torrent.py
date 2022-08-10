@@ -6,7 +6,6 @@ from urllib import parse
 import cn2an
 from lxml import etree
 from config import TORRENT_SEARCH_PARAMS
-from pt.filterrules import FilterRule
 from pt.siteconf import RSS_SITE_GRAP_CONF
 from rmt.meta.metabase import MetaBase
 from utils.http_utils import RequestUtils
@@ -15,92 +14,6 @@ import bencode
 
 
 class Torrent:
-
-    def is_torrent_match_rss(self, media_info, movie_keys, tv_keys, site_name):
-        """
-        判断种子是否命中订阅
-        :param media_info: 已识别的种子媒体信息
-        :param movie_keys: 电影订阅清单
-        :param tv_keys: 电视剧订阅清单
-        :param site_name: 站点名称
-        :return: 匹配到的订阅ID、是否洗版、总集数
-        """
-        if media_info.type == MediaType.MOVIE:
-            for key_info in movie_keys:
-                if not key_info:
-                    continue
-                name = key_info[0]
-                year = key_info[1]
-                tmdbid = key_info[2]
-                rssid = key_info[6]
-                # 订阅站点，是否洗板，过滤字典
-                sites, _, over_edition, filter_map = self.get_rss_note_item(key_info[4])
-                # 过滤订阅站点
-                if sites and site_name not in sites:
-                    continue
-                # 过滤字典
-                if filter_map and not Torrent.check_torrent_filter(media_info, filter_map):
-                    continue
-                # 有tmdbid时精确匹配
-                if tmdbid:
-                    # 匹配名称、年份，年份可以没有
-                    if name == media_info.title and (not year or str(year) == str(media_info.year)) \
-                            or str(media_info.tmdb_id) == str(tmdbid):
-                        return rssid, over_edition, None
-                # 模糊匹配
-                else:
-                    # 匹配年份
-                    if year and str(year) != str(media_info.year):
-                        continue
-                    # 匹配关键字，可能是正则表达式
-                    if re.search(r"%s" % name,
-                                 "%s %s %s" % (media_info.org_string, media_info.title, media_info.year),
-                                 re.IGNORECASE):
-                        return 0, False, None
-        else:
-            # 匹配种子标题
-            for key_info in tv_keys:
-                if not key_info:
-                    continue
-                name = key_info[0]
-                year = key_info[1]
-                season = key_info[2]
-                tmdbid = key_info[3]
-                rssid = key_info[10]
-                total = key_info[6]
-                # 订阅站点
-                sites, _, over_edition, filter_map = self.get_rss_note_item(key_info[5])
-                # 过滤订阅站点
-                if sites and site_name not in sites:
-                    continue
-                # 过滤字典
-                if filter_map and not Torrent.check_torrent_filter(media_info, filter_map):
-                    continue
-                # 有tmdbid时精确匹配
-                if tmdbid:
-                    # 匹配季，季可以为空
-                    if season and season != media_info.get_season_string():
-                        continue
-                    # 匹配年份，年份可以为空
-                    if year and str(year) != str(media_info.year):
-                        continue
-                    # 匹配名称
-                    if name == media_info.title or str(media_info.tmdb_id) == str(tmdbid):
-                        return rssid, over_edition, total
-                # 模糊匹配
-                else:
-                    # 匹配季
-                    if season and season != "S00" and season != media_info.get_season_string():
-                        continue
-                    # 匹配年份
-                    if year and str(year) != str(media_info.year):
-                        continue
-                    # 匹配关键字，可能是正则表达式
-                    if re.search(r"%s" % name,
-                                 "%s %s %s" % (media_info.org_string, media_info.title, media_info.year),
-                                 re.IGNORECASE):
-                        return 0, False, None
-        return None, None, None
 
     @staticmethod
     def is_torrent_match_sey(media_info, s_num, e_num, year_str):

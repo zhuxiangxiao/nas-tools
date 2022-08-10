@@ -108,6 +108,8 @@ def is_chinese(word):
 # 判断是否全是中文
 def is_all_chinese(word):
     for ch in word:
+        if ch == ' ':
+            continue
         if '\u4e00' <= ch <= '\u9fff':
             continue
         else:
@@ -499,3 +501,18 @@ def str_float(text):
     except Exception as e:
         print(str(e))
     return float_val
+
+
+def handler_special_chars(text):
+    """
+    处理特殊字符，转换为空格或者忽略
+    """
+    # 需要转换为空格的特殊字符
+    CONVERT_SPACES_CHARS = r"\.|-|/|:|：|&"
+    # 需要忽略的特殊字符
+    CONVERT_EMPTY_CHARS = r"'|’|!|！|,|～|·"
+    if not text:
+        return ""
+    text = re.sub(r"[\u200B-\u200D\uFEFF]", "", text, flags=re.IGNORECASE)
+    return re.sub(r'\s+', ' ', re.sub(r"%s" % CONVERT_EMPTY_CHARS, '',
+                                      re.sub(r"%s" % CONVERT_SPACES_CHARS, ' ', text))).strip()

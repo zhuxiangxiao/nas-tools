@@ -42,6 +42,7 @@ class Sites:
         """
         ret_sites = []
         for site in self.__pt_sites:
+            # 站点过滤规则为|分隔的第2位，第1位暂时未使用
             rule_groupid = str(site[9]).split("|")[1] if site[9] and len(str(site[9]).split("|")) > 1 else ""
             if rule_groupid:
                 rule_name = self.filtersites.get_rule_groups(rule_groupid).get("name") or ""
@@ -54,8 +55,6 @@ class Sites:
                 "rssurl": site[3],
                 "signurl": site[4],
                 "cookie": site[5],
-                "free": str(site[9]).split("|")[0] if site[9] and str(site[9]).split("|")[0] in ["FREE",
-                                                                                                 "2XFREE"] else "",
                 "rule": rule_groupid,
                 "rule_name": rule_name
             }
@@ -187,10 +186,10 @@ class Sites:
                             status.append("%s 签到失败，Cookie已过期" % pt_task)
                         else:
                             status.append("%s 签到成功" % pt_task)
-                    elif not res:
-                        status.append("%s 签到失败，无法打开网站" % pt_task)
-                    else:
+                    elif res.status_code:
                         status.append("%s 签到失败，状态码：%s" % (pt_task, res.status_code))
+                    else:
+                        status.append("%s 签到失败，无法打开网站" % pt_task)
                 except Exception as e:
                     log.error("【PT】%s 签到出错：%s - %s" % (pt_task, str(e), traceback.format_exc()))
         if status:

@@ -6,6 +6,7 @@ from pt.indexer.jackett import Jackett
 from pt.indexer.prowlarr import Prowlarr
 from rmt.media import Media
 from rmt.meta.metabase import MetaBase
+from utils.commons import ProcessHandler
 from utils.sqls import delete_all_search_torrents, insert_search_results
 from utils.types import SearchType, MediaType
 
@@ -68,7 +69,8 @@ class Searcher:
         """
         if not media_info:
             return False, {}, 0, 0
-
+        # 进度计数重置
+        ProcessHandler().reset()
         # 查找的季
         if not media_info.begin_season:
             search_season = None
@@ -89,6 +91,10 @@ class Searcher:
             else:
                 search_title = media_info.original_title
         match_words = [media_info.title, search_title] if search_title != media_info.title else [media_info.title]
+        # 增加名称为匹配关键字
+        if media_info.get_name() and media_info.get_name() not in match_words:
+            match_words.append(media_info.get_name())
+
         # 过滤条件
         filter_args = {"season": search_season,
                        "episode": search_episode,
@@ -103,8 +109,16 @@ class Searcher:
                                         filter_args=filter_args,
                                         match_type=1,
                                         match_words=match_words)
+        # 使用名称重新搜索
+        if len(media_list) == 0 and media_info.get_name() and search_title != media_info.get_name():
+            log.info("【SEARCHER】%s 未检索到资源,尝试通过 %s 重新检索 ..." % (search_title, media_info.get_name()))
+            media_list = self.search_medias(key_word=media_info.get_name(),
+                                            filter_args=filter_args,
+                                            match_type=1,
+                                            match_words=match_words)
+
         if len(media_list) == 0:
-            log.info("%s 未搜索到任何资源" % search_title)
+            log.info("【SEARCHER】%s 未搜索到任何资源" % search_title)
             return False, no_exists, 0, 0
         else:
             if in_from in [SearchType.WX, SearchType.TG]:

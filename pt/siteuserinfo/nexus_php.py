@@ -29,8 +29,15 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
                 self.userid = None
                 self._torrent_seeding_page = None
 
-        if not self._user_detail_page:
-            self.err_msg = "获取不到用户信息，请检查cookies是否过期"
+        html = etree.HTML(html_text)
+        if not html:
+            self.err_msg = "未检测到已登陆，请检查cookies是否过期"
+            return
+
+        logout = html.xpath('//a[contains(@href, "logout") or contains(@data-url, "logout")'
+                            ' or contains(@onclick, "logout") or contains(@href, "usercp")]')
+        if not logout:
+            self.err_msg = "未检测到已登陆，请检查cookies是否过期"
 
     def _parse_user_base_info(self, html_text):
         # 合并解析，减少额外请求调用
@@ -38,7 +45,8 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
         self._user_traffic_page = None
 
         html_text = self._prepare_html_text(html_text)
-        user_name = re.search(r"userdetails.php\?id=\d+[a-zA-Z\"'=_\-\s]+>[<b>\s]*([^<>]*)[</b>]*</a>", html_text)
+        user_name = re.search(r"userdetails.php\?id=\d+[a-zA-Z\"'=()\u4E00-\u9FA5_\-\s]+>[<b>\s]*([^<>]*)[</b>]*</a>",
+                              html_text)
         if user_name and user_name.group(1).strip():
             self.username = user_name.group(1).strip()
             return
@@ -191,6 +199,17 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
         if not self.seeding_info:
             self.seeding_info = tmp_seeding_info
 
+        seeding_sizes = html.xpath('//tr/td[text()="做种统计"]/following-sibling::td[1]//text()')
+        if seeding_sizes:
+            seeding_match = re.search(r"总做种数:\s+(\d+)", seeding_sizes[0], re.IGNORECASE)
+            seeding_size_match = re.search(r"总做种体积:\s+([\d,.\s]+[KMGTPI]*B)", seeding_sizes[0], re.IGNORECASE)
+            tmp_seeding = str_int(seeding_match.group(1)) if (seeding_match and seeding_match.group(1)) else 0
+            tmp_seeding_size = num_filesize(seeding_size_match.group(1).strip()) if seeding_size_match else 0
+        if not self.seeding_size:
+            self.seeding_size = tmp_seeding_size
+        if not self.seeding:
+            self.seeding = tmp_seeding
+
         self.__fixup_torrent_seeding_page(html)
 
     def __fixup_torrent_seeding_page(self, html):
@@ -220,10 +239,11 @@ class NexusPhpSiteUserInfo(ISiteUserInfo):
                 self._torrent_seeding_params = {'userid': self.userid, 'type': 'seeding', 'csrf': csrf_text[0].strip()}
 
         # 分类做种模式
-        seeding_url_text = html.xpath('//tr/td[text()="当前做种"]/following-sibling::td[1]'
-                                      '/table//td/a[contains(@href,"seeding")]/@href')
-        if seeding_url_text:
-            self._torrent_seeding_page = seeding_url_text
+        # 临时屏蔽
+        # seeding_url_text = html.xpath('//tr/td[text()="当前做种"]/following-sibling::td[1]'
+        #                              '/table//td/a[contains(@href,"seeding")]/@href')
+        # if seeding_url_text:
+        #    self._torrent_seeding_page = seeding_url_text
 
     def __get_user_level(self, html):
         # 等级 获取同一行等级数据，图片格式等级，取title信息，否则取文本信息

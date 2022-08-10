@@ -31,7 +31,7 @@ from rmt.metainfo import MetaInfo
 from service.run import stop_scheduler, stop_monitor, restart_scheduler, restart_monitor
 from service.scheduler import Scheduler
 from service.sync import Sync
-from utils.commons import EpisodeFormat
+from utils.commons import EpisodeFormat, ProcessHandler
 from utils.functions import *
 from utils.http_utils import RequestUtils
 from utils.meta_helper import MetaHelper
@@ -105,7 +105,8 @@ class WebAction:
             "get_downloaded": self.get_downloaded,
             "get_site_seeding_info": self.__get_site_seeding_info,
             "clear_tmdb_cache": self.__clear_tmdb_cache,
-            "check_site_attr": self.__check_site_attr
+            "check_site_attr": self.__check_site_attr,
+            "refresh_process": self.__refresh_process
         }
 
     def action(self, cmd, data):
@@ -318,32 +319,31 @@ class WebAction:
         dl_id = data.get("id")
         results = get_search_result_by_id(dl_id)
         for res in results:
-            if res[7] == "TV":
-                mtype = MediaType.TV
-            elif res[7] == "MOV":
-                mtype = MediaType.MOVIE
-            else:
-                mtype = MediaType.ANIME
-            msg_item = MetaInfo("%s" % res[8])
-            msg_item.type = mtype
-            msg_item.size = res[10]
-            msg_item.enclosure = res[0]
-            msg_item.site = res[14]
-            msg_item.upload_volume_factor = float(res[15] or 1.0)
-            msg_item.download_volume_factor = float(res[16] or 1.0)
             if res[11] and str(res[11]) != "0":
+                msg_item = MetaInfo("%s" % res[8])
+                if res[7] == "TV":
+                    mtype = MediaType.TV
+                elif res[7] == "MOV":
+                    mtype = MediaType.MOVIE
+                else:
+                    mtype = MediaType.ANIME
+                msg_item.type = mtype
                 msg_item.tmdb_id = res[11]
                 msg_item.title = res[1]
                 msg_item.vote_average = res[5]
                 msg_item.poster_path = res[6]
-                msg_item.description = res[9]
                 msg_item.poster_path = res[12]
                 msg_item.overview = res[13]
             else:
-                tmdbinfo = Media().get_tmdb_info(mtype=mtype, title=msg_item.get_name(), year=msg_item.year)
-                msg_item.set_tmdb_info(tmdbinfo)
+                msg_item = Media().get_media_info(title=res[8], subtitle=res[9])
+            msg_item.enclosure = res[0]
+            msg_item.description = res[9]
+            msg_item.size = res[10]
+            msg_item.site = res[14]
+            msg_item.upload_volume_factor = float(res[15] or 1.0)
+            msg_item.download_volume_factor = float(res[16] or 1.0)
             # 添加下载
-            ret, ret_msg = Downloader().add_pt_torrent(res[0], mtype)
+            ret, ret_msg = Downloader().add_pt_torrent(res[0], msg_item.type)
             if ret:
                 # 发送消息
                 Message().send_download_message(SearchType.WEB, msg_item)
@@ -1278,6 +1278,7 @@ class WebAction:
         brushtask_seedratio = data.get("brushtask_seedratio")
         brushtask_seedsize = data.get("brushtask_seedsize")
         brushtask_dltime = data.get("brushtask_dltime")
+        brushtask_avg_upspeed = data.get("brushtask_avg_upspeed")
         # 选种规则
         rss_rule = {
             "free": brushtask_free,
@@ -1292,7 +1293,8 @@ class WebAction:
             "time": brushtask_seedtime,
             "ratio": brushtask_seedratio,
             "uploadsize": brushtask_seedsize,
-            "dltime": brushtask_dltime
+            "dltime": brushtask_dltime,
+            "avg_upspeed": brushtask_avg_upspeed
         }
         # 添加记录
         item = {
@@ -1408,6 +1410,7 @@ class WebAction:
             "title": media_info.title,
             "year": media_info.year,
             "season_episode": media_info.get_season_episode_string(),
+            "part": media_info.part,
             "tmdbid": media_info.tmdb_id,
             "category": media_info.category,
             "restype": media_info.resource_type,
@@ -1421,13 +1424,11 @@ class WebAction:
         title = data.get("title")
         subtitle = data.get("subtitle")
         size = data.get("size")
-        if size:
-            size = float(size) * 1024 ** 3
         if not title:
             return {"code": -1}
         meta_info = MetaInfo(title=title, subtitle=subtitle)
-        match_flag, res_order, rule_name = FilterRule().check_rules(meta_info=meta_info,
-                                                                    torrent_size=size)
+        meta_info.size = float(size) * 1024 ** 3 if size else 0
+        match_flag, res_order, rule_name = FilterRule().check_rules(meta_info=meta_info)
         return {
             "code": 0,
             "flag": match_flag,
@@ -1517,7 +1518,8 @@ class WebAction:
             "pri": data.get("rule_pri"),
             "include": data.get("rule_include"),
             "exclude": data.get("rule_exclude"),
-            "size": data.get("rule_sizelimit")
+            "size": data.get("rule_sizelimit"),
+            "free": data.get("rule_free")
         }
         insert_filter_rule(rule_id, item)
         FilterRule().init_config()
@@ -1721,6 +1723,12 @@ class WebAction:
                 rule_htmls.append(
                     '<span class="badge badge-outline text-orange me-1 mb-1" title="下载耗时">下载耗时%s: %s 小时</span>'
                     % (rule_filter_string.get(dltimes[0]), dltimes[1]))
+        if rules.get("avg_upspeed"):
+            avg_upspeeds = rules.get("avg_upspeed").split("#")
+            if avg_upspeeds[0]:
+                rule_htmls.append(
+                    '<span class="badge badge-outline text-orange me-1 mb-1" title="平均上传速度">平均上传速度%s: %s KB/S</span>'
+                    % (rule_filter_string.get(avg_upspeeds[0]), avg_upspeeds[1]))
 
         return "<br>".join(rule_htmls)
 
@@ -1752,3 +1760,14 @@ class WebAction:
             if RSS_SITE_GRAP_CONF[url_host].get("HR"):
                 site_hr = True
         return {"code": 0, "site_free": site_free, "site_2xfree": site_2xfree, "site_hr": site_hr}
+
+    @staticmethod
+    def __refresh_process(data):
+        """
+        刷新进度条
+        """
+        detail = ProcessHandler().get_process()
+        if detail:
+            return {"code": 0, "value": detail.get("value"), "text": detail.get("text")}
+        else:
+            return {"code": 1}

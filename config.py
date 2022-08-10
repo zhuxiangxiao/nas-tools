@@ -15,7 +15,7 @@ SPLIT_CHARS = r"\.|\s+|\(|\)|\[|]|-|\+|【|】|/|～|;|&|\||#|_|「|」|（|）"
 # 收藏了的媒体的目录名，名字可以改，在Emby中点击红星则会自动将电影转移到此分类下，需要在Emby Webhook中配置用户行为通知
 RMT_FAVTYPE = '精选'
 # 支持的媒体文件后缀格式
-RMT_MEDIAEXT = ['.mp4', '.mkv', '.ts', '.iso', '.rmvb', '.avi', '.mov', '.mpeg', '.mpg', '.wmv', '.3gp', '.asf', '.m4v', '.flv']
+RMT_MEDIAEXT = ['.mp4', '.mkv', '.ts', '.iso', '.rmvb', '.avi', '.mov', '.mpeg', '.mpg', '.wmv', '.3gp', '.asf', '.m4v', '.flv', '.m2ts']
 # 支持的字幕文件后缀格式
 RMT_SUBEXT = ['.srt', '.ass', '.ssa']
 # 电视剧动漫的分类genre_ids
@@ -36,10 +36,12 @@ SYNC_TRANSFER_INTERVAL = 60
 RSS_CHECK_INTERVAL = 300
 # PT站流量数据刷新时间间隔（小时）
 REFRESH_PT_DATA_INTERVAL = 6
-# 将豆瓣订阅转为TMDB订阅的检查时间间隔（小时）
-RSS_DOUBAN_TO_TMDB_INTERVAL = 6
+# 刷新订阅TMDB数据的时间间隔（小时）
+RSS_REFRESH_TMDB_INTERVAL = 6
 # 刷流删除的检查时间间隔
 BRUSH_REMOVE_TORRENTS_INTERVAL = 600
+# 定时清除未识别的缓存时间间隔（小时）
+META_DELETE_UNKNOWN_INTERVAL = 12
 # fanart的api，用于拉取封面图片
 FANART_MOVIE_API_URL = 'https://webservice.fanart.tv/v3/movies/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
 FANART_TV_API_URL = 'https://webservice.fanart.tv/v3/tv/%s?api_key=d2d31f9ecabea050fc7d68aa3146015f'
@@ -63,8 +65,8 @@ TORRENT_SEARCH_PARAMS = {
     },
     "pix": {
         "8k": r"8K",
-        "4k": r"4K|2160P",
-        "1080p": r"1080[PIX]",
+        "4k": r"4K|2160P|X2160",
+        "1080p": r"1080[PIX]|X1080",
         "720p": r"720P"
     }
 }
