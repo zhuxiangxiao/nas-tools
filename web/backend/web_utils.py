@@ -1,19 +1,33 @@
+import base64
 import datetime
 import random
 from functools import lru_cache
+
+from config import TMDB_IMAGE_ORIGINAL_URL
 from rmt.media import Media
 from utils.http_utils import RequestUtils
+from utils.indexer_helper import IndexerHelper
 
 
 @lru_cache(maxsize=1)
-def get_random_discover_backdrop(today=datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d')):
+def get_login_wallpaper(today=datetime.datetime.strftime(datetime.datetime.now(), '%Y%m%d')):
+    print("当前日期：%s" % today)
+    img_url = get_random_discover_backdrop()
+    if img_url:
+        res = RequestUtils().get_res(img_url)
+        if res:
+            return base64.b64encode(res.content).decode()
+    return ""
+
+
+def get_random_discover_backdrop():
     """
     获取TMDB热门电影随机一张背景图
     """
     movies = Media().get_movie_discover()
     if movies:
         backdrops = [movie.get("backdrop_path") for movie in movies.get("results")]
-        return "https://www.themoviedb.org/t/p/original%s" % backdrops[round(random.uniform(0, len(backdrops)-1))]
+        return TMDB_IMAGE_ORIGINAL_URL % backdrops[round(random.uniform(0, len(backdrops) - 1))]
     return ""
 
 
@@ -51,3 +65,13 @@ def get_location(ip):
     except Exception as err:
         print(str(err))
         return ""
+
+
+def init_features():
+    """
+    启动时完成一些预加载操作
+    """
+    # 更新壁纸
+    get_login_wallpaper()
+    # 加载索引器配置
+    IndexerHelper()

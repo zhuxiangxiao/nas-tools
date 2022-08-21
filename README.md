@@ -169,7 +169,7 @@ https://github.com/jxxghp/nas-tools/releases
 
 
 ### 2、基础配置
-* 文件转移模式说明：目前支持三种模式：复制、硬链接、软链接。复制模式下载做种和媒体库是两份，多占用存储（下载盘大小决定能保多少种），好处是媒体库的盘不用24小时运行可以休眠；硬链接模式不用额外增加存储空间，一份文件两份目录，但需要下载目录和媒体库目录在一个磁盘分区或者存储空间；软链接模式就是快捷方式，需要容器内路径与真实路径一致才能正常使用。
+* 文件转移模式说明：目前支持五种模式：复制、硬链接、软链接、移动、RCLONE。复制模式下载做种和媒体库是两份，多占用存储（下载盘大小决定能保多少种），好处是媒体库的盘不用24小时运行可以休眠；硬链接模式不用额外增加存储空间，一份文件两份目录，但需要下载目录和媒体库目录在一个磁盘分区或者存储空间；软链接模式就是快捷方式，需要容器内路径与真实路径一致才能正常使用；移动模式会移动和删除原文件及目录；RCLONE模式只针对RCLONE网盘使用场景。
 
 * 启动程序并配置：Docker默认使用3000端口启动（群晖套件默认3003端口），默认用户密码：admin/password（docker需要参考教程提前映射好端口、下载目录、媒体库目录），登录管理界面后，在设置中根据每个配置项的提示在WEB页面修改好配置并重启生效（基础设置中有标红星的是必须要配置的，如TMDB APIKEY等）。详细配置方法可参考默认配置文件的注释及WIKI中的教程。
 
@@ -258,17 +258,17 @@ Jackett/Prowlarr二选一，但推荐使用Jackett，支持并发且支持副标
 * Docker版本，宿主机上运行以下命令，nas-tools修改为你的docker名称，修改源目录和目的目录参数。
    ```
    docker exec -it nas-tools sh
-   python3 /nas-tools/rmt/filetransfer.py -s /from/path -d /to/path
+   python3 /nas-tools/rmt/filetransfer.py -m link -s /from/path -d /to/path
    ```
 * 群晖套件版本，ssh到后台运行以下命令，同样修改配置文件路径以及源目录、目的目录参数。
    ```
    export NASTOOL_CONFIG=/volume1/NASTOOL/config.yaml
-   /var/packages/py3k/target/usr/local/bin/python3 /var/packages/nastool/target/rmt/filetransfer.py -s /from/path -d /to/path
+   /var/packages/py3k/target/usr/local/bin/python3 /var/packages/nastool/target/rmt/filetransfer.py -m link -s /from/path -d /to/path
    ```
 * 本地直接运行的，cd 到程序根目录，执行以下命令，修改配置文件、源目录和目的目录参数。
    ```
    export NASTOOL_CONFIG=/xxx/config.yaml
-   python3 rmt/filetransfer.py -s /from/path -d /to/path
+   python3 rmt/filetransfer.py -m link -s /from/path -d /to/path
    ```
 
 ## 鸣谢

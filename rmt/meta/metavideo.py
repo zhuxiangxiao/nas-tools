@@ -12,6 +12,7 @@ class MetaVideo(MetaBase):
     """
     # 控制标位区
     _stop_name_flag = False
+    _stop_cnname_flag = False
     _last_token = ""
     _last_token_type = ""
     _continue_flag = True
@@ -27,14 +28,13 @@ class MetaVideo(MetaBase):
     _name_nostring_re = r"^PTS|^JADE|^AOD|^CHC|^[A-Z]{1,4}TV[\-0-9UVHDK]*|HBO|\d{1,2}th|\d{1,2}bit|NETFLIX|AMAZON|IMAX|^3D|\s+3D|BBC|DISNEY\+?|XXX|\s+DC$" \
                         r"|[第\s共]+[0-9一二三四五六七八九十\-\s]+季" \
                         r"|[第\s共]+[0-9一二三四五六七八九十\-\s]+[集话話]" \
-                        r"|S\d{2}\s*-\s*S\d{2}|S\d{2}|\s+S\d{1,2}|EP?\d{2,4}\s*-\s*EP?\d{2,4}|EP?\d{2,4}|\s+EP?\d{1,4}" \
-                        r"|连载|日剧|美剧|电视剧|动画片|动漫|欧美|西德|日韩|超高清|高清|蓝光|翡翠台" \
+                        r"|连载|日剧|美剧|电视剧|动画片|动漫|欧美|西德|日韩|超高清|高清|蓝光|翡翠台|梦幻天堂·龙网" \
                         r"|最终季|合集|[多中国英葡法俄日韩德意西印泰台港粤双文语简繁体特效内封官译外挂]+字幕|版本|出品|台版|港版" \
                         r"|未删减版|UNCUT$|UNRATE$|WITH EXTRAS$|RERIP$|SUBBED$|PROPER$|REPACK$|SEASON$|EPISODE$" \
+                        r"|S\d{2}\s*-\s*S\d{2}|S\d{2}|\s+S\d{1,2}|EP?\d{2,4}\s*-\s*EP?\d{2,4}|EP?\d{2,4}|\s+EP?\d{1,4}" \
                         r"|CD[\s.]*[1-9]|DVD[\s.]*[1-9]|DISK[\s.]*[1-9]|DISC[\s.]*[1-9]" \
-                        r"|BLU-?RAY$|REMUX$|UHD$|U?HDTV$|HDDVD$|WEBRIP$|DVDRIP$|BDRIP$|SDR$|HDR\d*$|DOLBY$|WEB$|BD$" \
-                        r"|DTS\d?$|DTSHD$|DTSHDMA$|Atmos$|TrueHD\d?$|AC3$|\dAudios?$|DDP\d?$|DD\d?$|LPCM\d?$|AAC\d?$|FLAC\d?$|HD\d?$|MA\d?$" \
-                        r"|[248]K|\d{3,4}[PIX]+"
+                        r"|[248]K|\d{3,4}[PIX]+" \
+                        r"|CD[\s.]*[1-9]|DVD[\s.]*[1-9]|DISK[\s.]*[1-9]|DISC[\s.]*[1-9]"
     _resources_pix_re = r"^[SBUHD]*(\d{3,4}[PIX]+)"
     _resources_pix_re2 = r"(^[248]+K)"
     _video_encode_re = r"^[HX]26[45]$|^AVC$|^HEVC$|^VC\d?$|^MPEG\d?$|^Xvid$|^DivX$|^HDR\d*$"
@@ -88,9 +88,9 @@ class MetaVideo(MetaBase):
             token = tokens.get_next()
             self._continue_flag = True
         # 解析副标题，只要季和集
-        self.init_subtitle(title)
-        if not self._subtitle_flag and subtitle:
-            self.init_subtitle(subtitle)
+        self.init_subtitle(self.org_string)
+        if not self._subtitle_flag and self.subtitle:
+            self.init_subtitle(self.subtitle)
         # 没有识别出类型时默认为电影
         if not self.type:
             self.type = MediaType.MOVIE
@@ -135,9 +135,12 @@ class MetaVideo(MetaBase):
             return
         if is_chinese(token):
             # 含有中文，直接做为标题（连着的数字或者英文会保留），且不再取用后面出现的中文
-            if not self.cn_name and token:
+            self._last_token_type = "cnname"
+            if not self.cn_name:
                 self.cn_name = token
-                self._last_token_type = "cnname"
+            elif not self._stop_cnname_flag:
+                self.cn_name = "%s %s" % (self.cn_name, token)
+                self._stop_cnname_flag = True
         else:
             is_roman_digit = re.search(self._roman_numerals, token)
             # 阿拉伯数字或者罗马数字
@@ -168,7 +171,8 @@ class MetaVideo(MetaBase):
                         self._unknown_name_str = token
             elif re.search(r"%s" % self._season_re, token, re.IGNORECASE) \
                     or re.search(r"%s" % self._episode_re, token, re.IGNORECASE) \
-                    or re.search(r"(%s)" % self._resources_type_re, token, re.IGNORECASE):
+                    or re.search(r"(%s)" % self._resources_type_re, token, re.IGNORECASE) \
+                    or re.search(r"%s" % self._resources_pix_re, token, re.IGNORECASE):
                 # 季集等不要
                 self._stop_name_flag = True
                 return
@@ -279,11 +283,15 @@ class MetaVideo(MetaBase):
                         self.end_season = se
                         self.total_seasons = (self.end_season - self.begin_season) + 1
         elif token.isdigit():
+            try:
+                int(token)
+            except ValueError:
+                return
             if self.begin_season is not None \
                     and self.end_season is None \
                     and len(token) < 3 \
                     and int(token) > self.begin_season \
-                    and self._last_token_type == "season"\
+                    and self._last_token_type == "season" \
                     and (not self.tokens.cur() or not self.tokens.cur().isdigit()):
                 self.end_season = int(token)
                 self.total_seasons = (self.end_season - self.begin_season) + 1
@@ -328,6 +336,10 @@ class MetaVideo(MetaBase):
                         self.end_episode = se
                         self.total_episodes = (self.end_episode - self.begin_episode) + 1
         elif token.isdigit():
+            try:
+                int(token)
+            except ValueError:
+                return
             if self.begin_episode is not None \
                     and self.end_episode is None \
                     and len(token) < 5 \

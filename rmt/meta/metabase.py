@@ -4,7 +4,8 @@ from functools import lru_cache
 import cn2an
 
 import log
-from config import FANART_TV_API_URL, FANART_MOVIE_API_URL, ANIME_GENREIDS, Config, DEFAULT_TMDB_IMAGE
+from config import FANART_TV_API_URL, FANART_MOVIE_API_URL, ANIME_GENREIDS, Config, DEFAULT_TMDB_IMAGE, \
+    TMDB_IMAGE_W500_URL
 from rmt.category import Category
 from utils.functions import is_all_chinese
 from utils.http_utils import RequestUtils
@@ -67,6 +68,7 @@ class MetaBase(object):
     backdrop_path = None
     poster_path = None
     fanart_image = None
+    fanart_flag = False
     # 评分
     vote_average = 0
     # 描述
@@ -83,8 +85,9 @@ class MetaBase(object):
     peers = 0
     description = None
     page_url = None
-    upload_volume_factor = 1.0
-    download_volume_factor = 1.0
+    upload_volume_factor = None
+    download_volume_factor = None
+    hit_and_run = None
     rssid = None
     # 副标题解析
     _subtitle_flag = False
@@ -312,6 +315,8 @@ class MetaBase(object):
 
     # 返回促销信息
     def get_volume_factor_string(self):
+        if self.upload_volume_factor is None or self.download_volume_factor is None:
+            return "未知"
         free_strs = {
             "1.0 1.0": "普通",
             "1.0 0.0": "免费",
@@ -322,7 +327,7 @@ class MetaBase(object):
             "1.0 0.7": "70%",
             "1.0 0.3": "30%"
         }
-        return free_strs.get('%.1f %.1f' % (self.upload_volume_factor, self.download_volume_factor), "普通")
+        return free_strs.get('%.1f %.1f' % (self.upload_volume_factor, self.download_volume_factor), "未知")
 
     # 是否包含季
     def is_in_season(self, season):
@@ -391,23 +396,23 @@ class MetaBase(object):
                 self.category = self.category_handler.get_tv_category(info)
             else:
                 self.category = self.category_handler.get_anime_category(info)
-        self.poster_path = "https://image.tmdb.org/t/p/w500%s" % info.get('poster_path') if info.get(
+        self.poster_path = TMDB_IMAGE_W500_URL % info.get('poster_path') if info.get(
             'poster_path') else ""
-        self.backdrop_path = "https://image.tmdb.org/t/p/w500%s" % info.get('backdrop_path') if info.get(
+        self.backdrop_path = TMDB_IMAGE_W500_URL % info.get('backdrop_path') if info.get(
             'backdrop_path') else ""
 
     # 刷新Fanart图片
     def __refresh_fanart_image(self):
         if not self.tmdb_id:
             return
-        if self.fanart_image:
+        if self.fanart_image or self.fanart_flag:
             return
         self.fanart_image = self.__get_fanart_image(search_type=self.type, tmdbid=self.tmdb_id)
+        self.fanart_flag = True
 
     # 获取Fanart图片
     def get_fanart_image(self):
-        if not self.fanart_image:
-            self.__refresh_fanart_image()
+        self.__refresh_fanart_image()
         return self.fanart_image
 
     # 整合种了信息
@@ -423,7 +428,8 @@ class MetaBase(object):
                          page_url=None,
                          upload_volume_factor=None,
                          download_volume_factor=None,
-                         rssid=None):
+                         rssid=None,
+                         hit_and_run=None):
         if site:
             self.site = site
         if site_order:
@@ -448,6 +454,8 @@ class MetaBase(object):
             self.download_volume_factor = download_volume_factor
         if rssid:
             self.rssid = rssid
+        if hit_and_run is not None:
+            self.hit_and_run = hit_and_run
 
     # 获取消息媒体图片
     # 增加cache，优化资源检索时性能
@@ -462,7 +470,7 @@ class MetaBase(object):
             else:
                 image_url = FANART_TV_API_URL % tmdbid
             try:
-                ret = RequestUtils(proxies=cls.proxies).get_res(image_url)
+                ret = RequestUtils(proxies=cls.proxies, timeout=5).get_res(image_url)
                 if ret:
                     moviethumbs = ret.json().get('moviethumb')
                     if moviethumbs:

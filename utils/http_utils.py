@@ -9,21 +9,24 @@ class RequestUtils:
     __headers = None
     __cookies = None
     __proxies = None
-    __timeout = 30
+    __timeout = 20
     __session = None
 
     def __init__(self, headers=None, cookies=None, proxies=False, session=None, timeout=None):
         if headers:
             if isinstance(headers, str):
-                self.__headers = {"User-Agent": f"{headers}"}
+                self.__headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                                  "User-Agent": f"{headers}"}
             else:
                 self.__headers = headers
         else:
             user_agent = Config().get_config("app").get("user_agent")
             if user_agent:
-                self.__headers = {"User-Agent": user_agent}
+                self.__headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                                  "User-Agent": user_agent}
             else:
-                self.__headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"}
+                self.__headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36"}
         if cookies:
             if isinstance(cookies, str):
                 self.__cookies = self.cookie_parse(cookies)

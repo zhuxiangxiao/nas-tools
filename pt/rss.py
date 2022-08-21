@@ -111,6 +111,8 @@ class Rss:
                     log.info("【RSS】%s 未配置rssurl，跳过..." % str(rss_job))
                     continue
                 rss_cookie = site_info.get("cookie")
+                # 是否解析种子详情
+                site_parse = False if site_info.get("parse") == "N" else True
                 # 使用的规则
                 site_rule_group = site_info.get("rule")
                 # 开始下载RSS
@@ -162,7 +164,8 @@ class Rss:
                             movie_keys=movie_keys,
                             tv_keys=tv_keys,
                             site_rule=site_rule_group,
-                            site_cookie=rss_cookie)
+                            site_cookie=rss_cookie,
+                            site_parse=site_parse)
                         if match_rssid is not None:
                             log.info("【RSS】%s %s%s 匹配成功" % (media_info.org_string,
                                                             media_info.get_title_string(),
@@ -632,7 +635,8 @@ class Rss:
                                movie_keys,
                                tv_keys,
                                site_rule,
-                               site_cookie):
+                               site_cookie,
+                               site_parse):
         """
         判断种子是否命中订阅
         :param media_info: 已识别的种子媒体信息
@@ -640,6 +644,7 @@ class Rss:
         :param tv_keys: 电视剧订阅清单
         :param site_rule: 站点过滤规则
         :param site_cookie: 站点的Cookie
+        :param site_parse: 是否解析种子详情
         :return: 匹配到的订阅ID、是否洗版、总集数、匹配规则的资源顺序、上传因子、下载因子
         """
         # 默认值
@@ -649,6 +654,7 @@ class Rss:
         over_edition = None
         upload_volume_factor = 1.0
         download_volume_factor = 1.0
+        hit_and_run = False
         rulegroup = site_rule
         total_episodes = 0
 
@@ -680,7 +686,8 @@ class Rss:
                     else:
                         if year and str(year) != str(media_info.year):
                             continue
-                        if str(name) != str(media_info.title):
+                        if str(name) != str(media_info.title) \
+                                and str(name) != str(media_info.original_title):
                             continue
                 # 模糊匹配
                 else:
@@ -691,7 +698,7 @@ class Rss:
                         continue
                     # 匹配关键字，可能是正则表达式
                     if not re.search(r"%s" % name,
-                                     "%s %s %s" % (media_info.org_string, media_info.title, media_info.year),
+                                     "%s %s %s %s" % (media_info.org_string, media_info.title, media_info.original_title, media_info.year),
                                      re.IGNORECASE):
                         continue
                 # 媒体匹配成功
@@ -727,7 +734,8 @@ class Rss:
                             continue
                     else:
                         # 匹配名称
-                        if str(name) != str(media_info.title):
+                        if str(name) != str(media_info.title) \
+                                and str(name) != str(media_info.original_title):
                             continue
                         # 匹配年份，年份可以为空
                         if year and str(year) != str(media_info.year):
@@ -747,7 +755,7 @@ class Rss:
                         continue
                     # 匹配关键字，可能是正则表达式
                     if not re.search(r"%s" % name,
-                                     "%s %s %s" % (media_info.org_string, media_info.title, media_info.year),
+                                     "%s %s %s %s" % (media_info.org_string, media_info.title, media_info.original_title, media_info.year),
                                      re.IGNORECASE):
                         continue
                 # 媒体匹配成功
@@ -755,17 +763,21 @@ class Rss:
                 break
         # 名称匹配成功，开始匹配规则
         if match_flag:
-            # 检测Free
-            attr_type = Torrent.check_torrent_attr(torrent_url=media_info.page_url, cookie=site_cookie)
-            if "2XFREE" in attr_type:
-                download_volume_factor = 0.0
-                upload_volume_factor = 2.0
-            elif "FREE" in attr_type:
-                download_volume_factor = 0.0
-                upload_volume_factor = 1.0
-            # 设置属性
-            media_info.set_torrent_info(upload_volume_factor=upload_volume_factor,
-                                        download_volume_factor=download_volume_factor)
+            if site_parse:
+                # 检测Free
+                attr_type = Torrent.check_torrent_attr(torrent_url=media_info.page_url, cookie=site_cookie)
+                if "2XFREE" in attr_type:
+                    download_volume_factor = 0.0
+                    upload_volume_factor = 2.0
+                elif "FREE" in attr_type:
+                    download_volume_factor = 0.0
+                    upload_volume_factor = 1.0
+                if "HR" in attr_type:
+                    hit_and_run = True
+                # 设置属性
+                media_info.set_torrent_info(upload_volume_factor=upload_volume_factor,
+                                            download_volume_factor=download_volume_factor,
+                                            hit_and_run=hit_and_run)
             match_flag, res_order, _ = FilterRule().check_rules(meta_info=media_info,
                                                                 rolegroup=rulegroup)
             if not match_flag:

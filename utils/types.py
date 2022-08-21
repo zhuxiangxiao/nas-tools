@@ -11,6 +11,8 @@ class MediaType(Enum):
 class DownloaderType(Enum):
     QB = 'Qbittorrent'
     TR = 'Transmission'
+    Client115 = '115网盘'
+    Aria2 = 'Aria2'
 
 
 class SyncType(Enum):
@@ -32,6 +34,8 @@ class RmtMode(Enum):
     SOFTLINK = "软链接"
     COPY = "复制"
     MOVE = "移动"
+    RCLONECOPY = "rclone复制"
+    RCLONE = "rclone移动"
 
 
 class MatchMode(Enum):
@@ -47,6 +51,7 @@ class OsType(Enum):
 class IndexerType(Enum):
     JACKETT = "Jackett"
     PROWLARR = "Prowlarr"
+    INDEXER = "Indexer"
 
 
 class MediaServerType(Enum):

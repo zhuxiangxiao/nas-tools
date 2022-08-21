@@ -2,6 +2,7 @@ import log
 from config import Config
 from message.send import Message
 from pt.downloader import Downloader
+from pt.indexer.builtin import BuiltinIndexer
 from pt.indexer.jackett import Jackett
 from pt.indexer.prowlarr import Prowlarr
 from rmt.media import Media
@@ -29,16 +30,18 @@ class Searcher:
         self.__search_auto = config.get_config("pt").get('search_auto', True)
         if config.get_config("pt").get('search_indexer') == "prowlarr":
             self.indexer = Prowlarr()
-        else:
+        elif config.get_config("pt").get('search_indexer') == "jackett":
             self.indexer = Jackett()
+        else:
+            self.indexer = BuiltinIndexer()
 
-    def search_medias(self, key_word, filter_args: dict, match_type, match_words=None):
+    def search_medias(self, key_word, filter_args: dict, match_type, match_media: MetaBase = None):
         """
         根据关键字调用索引器检查媒体
         :param key_word: 检索的关键字，不能为空
         :param filter_args: 过滤条件
         :param match_type: 匹配模式：0-识别并模糊匹配；1-识别并精确匹配；2-不识别匹配
-        :param match_words: 匹配的关键字
+        :param match_media: 区配的媒体信息
         :return: 命中的资源媒体信息列表
         """
         if not key_word:
@@ -48,7 +51,7 @@ class Searcher:
         return self.indexer.search_by_keyword(key_word=key_word,
                                               filter_args=filter_args,
                                               match_type=match_type,
-                                              match_words=match_words)
+                                              match_media=match_media)
 
     def search_one_media(self, media_info: MetaBase,
                          in_from: SearchType,
@@ -72,7 +75,7 @@ class Searcher:
         # 进度计数重置
         ProcessHandler().reset()
         # 查找的季
-        if not media_info.begin_season:
+        if media_info.begin_season is None:
             search_season = None
         else:
             search_season = media_info.get_season_list()
@@ -90,10 +93,6 @@ class Searcher:
                     search_title = en_info.get("title") if media_info.type == MediaType.MOVIE else en_info.get("name")
             else:
                 search_title = media_info.original_title
-        match_words = [media_info.title, search_title] if search_title != media_info.title else [media_info.title]
-        # 增加名称为匹配关键字
-        if media_info.get_name() and media_info.get_name() not in match_words:
-            match_words.append(media_info.get_name())
 
         # 过滤条件
         filter_args = {"season": search_season,
@@ -108,14 +107,14 @@ class Searcher:
         media_list = self.search_medias(key_word=search_title,
                                         filter_args=filter_args,
                                         match_type=1,
-                                        match_words=match_words)
+                                        match_media=media_info)
         # 使用名称重新搜索
         if len(media_list) == 0 and media_info.get_name() and search_title != media_info.get_name():
             log.info("【SEARCHER】%s 未检索到资源,尝试通过 %s 重新检索 ..." % (search_title, media_info.get_name()))
             media_list = self.search_medias(key_word=media_info.get_name(),
                                             filter_args=filter_args,
                                             match_type=1,
-                                            match_words=match_words)
+                                            match_media=media_info)
 
         if len(media_list) == 0:
             log.info("【SEARCHER】%s 未搜索到任何资源" % search_title)

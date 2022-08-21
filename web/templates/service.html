@@ -65,25 +65,6 @@
   </div>
 </div>
 {% endif %}
-<div class="modal modal-blur fade" id="modal-logging" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">实时日志</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
-          id="logging_close_head"></button>
-      </div>
-      <div class="modal-body" id="logging_content" style="display:flex; flex-direction:column-reverse;font-size:12px;">
-      </div>
-      <div class="modal-footer">
-        <a href="javascript:pause_logging()" class="btn btn-link me-auto" id="logging_stop_btn">
-          暂停
-        </a>
-        <button type="button" class="btn btn-primary" data-bs-dismiss="modal" id="logging_close_btn">关闭</button>
-      </div>
-    </div>
-  </div>
-</div>
 <div class="modal modal-blur fade" id="modal-nametest" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
     <div class="modal-content">
@@ -162,45 +143,81 @@
     </div>
   </div>
 </div>
+<div class="modal modal-blur fade" id="modal-nettest" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="card border-top-0">
+        <div class="card-header">
+          <h5 class="modal-title">网络连通性测试</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="card-body border-bottom py-3">
+          <div class="table-responsive">
+            <input type="hidden" id="test_targets" value="{{ SchedulerTasks[-2].targets }}">
+            <table class="table table-vcenter card-table">
+              <thead>
+                <tr>
+                  <th>测试对象</th>
+                  <th>连通性</th>
+                  <th>耗时</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for target in SchedulerTasks[-2].targets %}
+                <tr>
+                  <td><span>{{ target }}</span></td>
+                  <td id="nettest_item{{ loop.index0 }}"></td>
+                  <td id="nettest_item{{ loop.index0 }}_time"></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-link me-auto" data-bs-dismiss="modal">取消</button>
+        <button id="nettest_btn" class="btn btn-primary">测试</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal modal-blur fade" id="modal-backup" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="card border-top-0">
+        <div class="card-header">
+          <h5 class="modal-title">备份&恢复</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="card-body">
+          <form class="dropzone" id="back_file" action="/upload">
+            <div class="fallback">
+              <input name="file" type="file" accept="*.zip"/>
+            </div>
+            <div class="dz-message">
+              <h3 class="dropzone-msg-title">上传备份文件</h3>
+              <span class="dropzone-msg-desc">点击或者拖动备份文件到此处</span>
+            </div>
+          </form>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="backup_btn" class="btn btn-primary">备份当前配置</button>
+        <button id="restore_btn" class="btn btn-danger">恢复配置</button>
+      </div>
+    </div>
+  </div>
+</div>
 <script type="text/javascript">
-
-  //刷新LOG标志
-  var refresh_logging_flag = false
-  //开始刷新日志
-  function start_logging() {
-    refresh_logging_flag = true;
-    refresh_logging();
-  }
-  //停止刷新日志
-  function stop_logging() {
-    refresh_logging_flag = false;
-  }
-  //刷新日志
-  function refresh_logging(flag) {
-    ajax_post("logging", {}, function (ret) {
-      if (ret.text) {
-        $("#logging_content").append(ret.text);
-        var height = $('#logging_content').prop("scrollHeight");
-        $('#logging_content').scrollTop(height);
-      }
-      if($("#modal-logging").is(":hidden") && flag){
-        stop_logging();
-      }
-      if (refresh_logging_flag == true) {
-        setTimeout("refresh_logging(true)", 2000);
-      }
-    });
-  }
-
   // 显示服务提示框
   function show_service_modal(id, name) {
-    if (id == "logging") {
-      $('#modal-logging').modal('show');
-      start_logging();
-    } else if (id == "nametest") {
+    if (id == "nametest") {
       $('#modal-nametest').modal('show');
     } else if (id == "ruletest") {
       $('#modal-ruletest').modal('show');
+    } else if (id == "nettest") {
+      $('#modal-nettest').modal('show');
     } else if (id == "blacklist"){
       show_confirm_modal("清理缓存后，已转移过的文件允许重新转移（包括识别错误的文件），是否确认？", function(){
         hide_confirm_modal();
@@ -208,6 +225,8 @@
           show_success_modal("文件缓存清理完成！");
         });
       });
+    } else if (id == "backup") {
+        $('#modal-backup').modal('show');
     } else {
       show_ask_modal("是否立即运行 " + name + "？", function () {
         hide_ask_modal();
@@ -224,32 +243,49 @@
     });
   }
 
-  //暂停实时日志
-  function pause_logging() {
-    if (refresh_logging_flag == true) {
-      stop_logging();
-      $("#logging_stop_btn").text("开始")
-    } else {
-      start_logging();
-      $("#logging_stop_btn").text("暂停")
-    }
-  }
-
-  //实时日志关闭
-  $("#logging_close_btn").click(function () {
-    stop_logging();
-  });
-
-  $("#logging_close_head").click(function () {
-    stop_logging();
-  });
-
+  // 名称测试
   $("#nametest_btn").click(function () {
     name_test();
   });
 
+  // 规则测试
   $("#ruletest_btn").click(function () {
     rule_test();
+  });
+
+  // 网络测试
+  $("#nettest_btn").click(function () {
+    net_test();
+  });
+
+  // 备份
+  $("#backup_btn").click(function () {
+    $("#backup_btn").text("备份中...").attr("disabled", true);
+    ajax_backup(function(){
+      $("#backup_btn").attr("disabled", false).text("备份当前配置");
+    });
+  });
+
+  // 恢复备份
+  $("#restore_btn").click(function () {
+    if(!dropzone || !dropzone.files || !dropzone.files[0]){
+      return;
+    }
+    $("#restore_btn").text("恢复中...").attr("disabled", true);
+    ajax_post( "restory_backup", {file_name: dropzone.files[dropzone.files.length-1].name}, function (ret) {
+      $("#restore_btn").attr("disabled", false).text("恢复配置");
+      $("#modal-backup").modal('hide');
+      if (ret.code == 0) {
+        show_confirm_modal("备份恢复成功，立即重启系统？", function () {
+          $("#system_confirm_btn").attr("disabled", true).text("重启中...");
+            ajax_post("restart", {}, function (ret) {
+          });
+          setTimeout("window.location.reload()", 10000);
+        });
+      } else {
+        show_fail_modal("备份恢复失败：" + ret.msg);
+      }
+    });
   });
 
   //名称识别测试
@@ -342,5 +378,45 @@
       }
     });
   }
+  //网络连通性测试
+  function net_test(){
+    //从隐藏的span获取测试列表（字符串类型）
+    var targets = $("#test_targets").val();
+    targets = targets.replace(/'/g,"");
+    targets = targets.replace(/\[/g,"");
+    targets = targets.replace(/\]/g,"");
+    targets = targets.split(",");
+    $("#nettest_btn").text("测试中");
+    $("#nettest_btn").attr("disabled", true);
+    var currentIndex = 0;
+    net_test_ajax(targets,currentIndex);
+  }
 
+  //递归轮询测试结果
+  function net_test_ajax(targets,currentIndex){
+    stopindex = targets.length
+    if(currentIndex >= targets.length){
+      $("#nettest_btn").text("测试");
+      $("#nettest_btn").attr("disabled", false);
+      return;
+    }
+    var target = '';
+    target = targets[currentIndex];
+    target = target.replace(/\s*/g,"");
+    ajax_post("net_test", target, function (ret) {
+      if(ret.res){
+        $("#nettest_item" + currentIndex).html('<span class="badge badge-outline text-green me-1 mb-1">是</span>');
+        $("#nettest_item" + currentIndex + "_time").html('<span class="text-green">' + ret.time + '</span>');
+      }else{
+        $("#nettest_item" + currentIndex).html('<span class="badge badge-outline text-red me-1 mb-1">否</span>');
+        $("#nettest_item" + currentIndex + "_time").html('<span class="text-red">' + ret.time + '</span>');
+      }
+      currentIndex++;
+      net_test_ajax(targets,currentIndex)
+    });
+  }
+
+  // 初始化DropZone
+  dropzone = new Dropzone("#back_file");
+  dropzone.options.acceptedFiles = ".zip";
 </script>

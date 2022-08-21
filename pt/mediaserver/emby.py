@@ -1,15 +1,20 @@
+import os
+import re
+
 import log
 from config import Config
 from pt.mediaserver.server import IMediaServer
 from rmt.meta.metabase import MetaBase
-from utils.functions import get_local_time
+from utils.functions import get_local_time, singleton
 from utils.http_utils import RequestUtils
 from utils.types import MediaType
 
 
+@singleton
 class Emby(IMediaServer):
     __apikey = None
     __host = None
+    __librarys = []
 
     def __init__(self):
         self.init_config()
@@ -19,11 +24,14 @@ class Emby(IMediaServer):
         emby = config.get_config('emby')
         if emby:
             self.__host = emby.get('host')
-            if not self.__host.startswith('http://') and not self.__host.startswith('https://'):
-                self.__host = "http://" + self.__host
-            if not self.__host.endswith('/'):
-                self.__host = self.__host + "/"
+            if self.__host:
+                if not self.__host.startswith('http://') and not self.__host.startswith('https://'):
+                    self.__host = "http://" + self.__host
+                if not self.__host.endswith('/'):
+                    self.__host = self.__host + "/"
             self.__apikey = emby.get('api_key')
+            if self.__host and self.__apikey:
+                self.__librarys = self.__get_emby_librarys()
 
     def get_status(self):
         """
@@ -321,9 +329,26 @@ class Emby(IMediaServer):
                 # 已存在，不用刷新
                 return None
         # 查找需要刷新的媒体库ID
-        for library in self.__get_emby_librarys():
+        for library in self.__librarys:
+            # 找同级路径最多的媒体库（要求容器内映射路径与实际一致）
+            max_equal_path_id = None
+            max_path_len = 0
+            equal_path_num = 0
             for folder in library.get("SubFolders"):
-                if "/%s" % item.get("category") in folder.get("Path"):
+                try:
+                    path_len = len(os.path.commonpath([item.get("target_path"), folder.get("Path")]))
+                    if path_len >= max_path_len:
+                        max_path_len = path_len
+                        max_equal_path_id = folder.get("Id")
+                        equal_path_num += 1
+                except Exception as err:
+                    print(str(err))
+                    continue
+            if max_equal_path_id:
+                return max_equal_path_id if equal_path_num == 1 else library.get("Id")
+            # 如果找不到，只要路径中有分类目录名就命中
+            for folder in library.get("SubFolders"):
+                if folder.get("Path") and re.search(r"[/\\]%s" % item.get("category"), folder.get("Path")):
                     return library.get("Id")
         # 刷新根目录
         return "/"

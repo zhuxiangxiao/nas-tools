@@ -62,6 +62,30 @@
           </div>
         </a>
       </div>
+      <div class="col-12 col-md-4 col-xl-3">
+        <a class="card card-link card-link-pop" href="#" data-bs-toggle="modal" data-bs-target="#modal-pushplus">
+          <div class="card-cover card-cover-blurred text-center" style="background-color: #0693EF">
+            <span class="avatar avatar-xl avatar-thumb avatar-rounded" style="background-image: url(../static/img/pushplus.jpg)">
+            </span>
+          </div>
+          <div class="card-body text-center">
+            <div class="card-title mb-1">PushPlus</div>
+            <div class="text-muted">{% if Config.message.msg_channel == "pushplus" %}<span class="badge bg-green" title="已开启"></span> 正在使用{% endif %}</div>
+          </div>
+        </a>
+      </div>
+      <div class="col-12 col-md-4 col-xl-3">
+        <a class="card card-link card-link-pop" href="#" data-bs-toggle="modal" data-bs-target="#modal-iyuu">
+          <div class="card-cover card-cover-blurred text-center bg-yellow">
+            <span class="avatar avatar-xl avatar-thumb avatar-rounded" style="background-image: url(../static/img/iyuu.png)">
+            </span>
+          </div>
+          <div class="card-body text-center">
+            <div class="card-title mb-1">爱语飞飞</div>
+            <div class="text-muted">{% if Config.message.msg_channel == "iyuu" %}<span class="badge bg-green" title="已开启"></span> 正在使用{% endif %}</div>
+          </div>
+        </a>
+      </div>
     </div>
   </div>
 </div>
@@ -159,7 +183,7 @@
               <div class="mb-3">
                 <label class="form-check form-switch">
                   <input class="form-check-input" type="checkbox" id="webhook" {% if  Config.message.telegram.webhook %}checked{% endif %}>
-                  <span class="form-check-label">WebHook <span class="form-help bg-red-lt" title="受Telegram限制，程序外网访问地址需要设置为以下端口之一：443, 80, 88, 8443，且需要有公网认证的可信SSL证书" data-bs-toggle="tooltip">?</span></span>
+                  <span class="form-check-label">WebHook <span class="form-help bg-red-lt" title="Telegram回调开关，打开后可以实现远程控制，需要在基础设置为正确配置好外网访问地址；受Telegram官方限制，外网访问地址需要设置为以下端口之一：443, 80, 88, 8443，且需要有公网认证的可信SSL证书" data-bs-toggle="tooltip">?</span></span>
                 </label>
               </div>
             </div>
@@ -188,7 +212,7 @@
             <div class="col-lg-12">
               <div class="mb-3">
                 <label class="form-label required">SCKEY <span class="form-help bg-red-lt" title="填写ServerChan的API Key，SCT类型，在https://sct.ftqq.com/中申请" data-bs-toggle="tooltip">?</span></label>
-                <input type="text" value="{% if Config.message.serverchan %}{{ Config.message.serverchan.sckey or '' }}{% endif %}" id="sckey" class="form-control">
+                <input type="text" value="{% if Config.message.serverchan %}{{ Config.message.serverchan.sckey or '' }}{% endif %}" id="sckey" class="form-control" placeholder="登录https://sct.ftqq.com获取">
               </div>
             </div>
           </div>
@@ -237,6 +261,84 @@
     </div>
   </div>
 </div>
+<div class="modal modal-blur fade" id="modal-pushplus" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="card border-top-0">
+        <div class="card-header">
+          <h5 class="modal-title">PushPlus</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-lg-3">
+              <div class="mb-3">
+                <label class="form-label required">用户令牌 <span class="form-help bg-red-lt" title="登录http://pushplus.plus/申请token" data-bs-toggle="tooltip">?</span></label>
+                <input type="text" value="{% if Config.message.pushplus %}{{ Config.message.pushplus.push_token or '' }}{% endif %}" id="push_token" class="form-control">
+              </div>
+            </div>
+            <div class="col-lg-3">
+              <div class="mb-3">
+                <label class="form-label required">发送渠道 <span class="form-help bg-red-lt" title="使用PushPlus中配置的发送渠道，具体参考pushplus.plus官网文档说明，支持第三方webhook、钉钉、飞书、邮箱等" data-bs-toggle="tooltip">?</span></label>
+                <select class="form-select" id="push_channel">
+                  <option value="wechat" {% if Config.message.pushplus %}{% if Config.message.pushplus.push_channel=='wechat' %}selected{% endif %}{% endif %}>微信公众号</option>
+                  <option value="mail" {% if Config.message.pushplus %}{% if Config.message.pushplus.push_channel=='mail' %}selected{% endif %}{% endif %}>邮箱</option>
+                  <option value="webhook" {% if Config.message.pushplus %}{% if Config.message.pushplus.push_channel=='webhook' %}selected{% endif %}{% endif %}>第三方webhook</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-lg-3">
+              <div class="mb-3">
+                <label class="form-label">群组编码 <span class="form-help bg-red-lt" title="PushPlus中创建的群组，如未设置可为空" data-bs-toggle="tooltip">?</span></label>
+                <input type="text" value="{% if Config.message.pushplus %}{{ Config.message.pushplus.push_topic or '' }}{% endif %}" id="push_topic" class="form-control">
+              </div>
+            </div>
+            <div class="col-lg-3">
+              <div class="mb-3">
+                <label class="form-label">webhook编码 <span class="form-help bg-red-lt" title="PushPlus中创建的webhook编码，发送渠道为第三方webhook时需要填入" data-bs-toggle="tooltip">?</span></label>
+                <input type="text" value="{% if Config.message.pushplus %}{{ Config.message.pushplus.push_webhook or '' }}{% endif %}" id="push_webhook" class="form-control">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a href="javascript:test_message_config('pushplus')" id="pushplus_test_btn" class="btn btn-white me-auto">
+          测试
+        </a>
+        <a href="javascript:save_message_config('pushplus')" id="pushplus_save_btn" class="btn btn-primary">确定</a>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal modal-blur fade" id="modal-iyuu" tabindex="-1" role="dialog" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="card border-top-0">
+        <div class="card-header">
+          <h5 class="modal-title">爱语飞飞</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="card-body">
+          <div class="row">
+            <div class="col-lg-12">
+              <div class="mb-3">
+                <label class="form-label required">令牌Token <span class="form-help bg-red-lt" title="登录https://iyuu.cn/获取爱语飞飞令牌Token" data-bs-toggle="tooltip">?</span></label>
+                <input type="text" value="{% if Config.message.iyuu %}{{ Config.message.iyuu.iyuu_token or '' }}{% endif %}" id="iyuu_token" class="form-control" placeholder="登录https://iyuu.cn获取">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <a href="javascript:test_message_config('iyuu')" id="iyuu_test_btn" class="btn btn-white me-auto">
+          测试
+        </a>
+        <a href="javascript:save_message_config('iyuu')" id="iyuu_save_btn" class="btn btn-primary">确定</a>
+      </div>
+    </div>
+  </div>
+</div>
 <script type="text/javascript">
   // 当前处理的类型
   var currType = "";
@@ -253,6 +355,10 @@
         var value = $(this).val();
       }
       cfg_value[key] = value;
+    });
+    $("#modal-"+ type +" select").each(function(){
+      var key = $(this).attr("id");
+      cfg_value[key] = $(this).val();
     });
     params["message." + type] = cfg_value;
     params['message.msg_channel'] = type;
@@ -279,6 +385,10 @@
         command = ["Telegram().get_status()"];
       }else if(currType == "serverchan"){
         command = "message.channel.serverchan|ServerChan";
+      }else if(currType == "pushplus"){
+        command = "message.channel.pushplus|PushPlus";
+      }else if(currType == "iyuu"){
+        command = "message.channel.iyuu|IyuuMsg";
       }
       ajax_post("test_connection", {"command": command}, function(ret){
         if(ret.code == 0){

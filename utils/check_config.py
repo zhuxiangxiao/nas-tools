@@ -149,6 +149,11 @@ def check_config(config):
             telegram_chat_id = config.get_config('message').get('telegram', {}).get('telegram_chat_id')
             if not telegram_token or not telegram_chat_id:
                 log.warn("Telegram配置不完整，将无法接收到通知消息！")
+        elif msg_channel == "pushplus":
+            pushplus_token = config.get_config('message').get('pushplus', {}).get('push_token')
+            pushplus_channel = config.get_config('message').get('pushplus', {}).get('push_channel')
+            if not pushplus_token or not pushplus_channel:
+                log.warn("PushPlus配置不完整，将无法接收到通知消息！")
     else:
         log.error("配置文件格式错误，找不到message配置项！")
 
@@ -178,7 +183,12 @@ def check_config(config):
         elif sync_mod == "softlink":
             log.info("目录同步转移模式为：软链接")
         elif sync_mod == "move":
-            log.info("目录同步转移模式为：软链接")
+            log.info("目录同步转移模式为：移动")
+        elif sync_mod == "rclone":
+            log.info("目录同步转移模式为：rclone移动")
+        elif sync_mod == "rclonecopy":
+            log.info("目录同步转移模式为：rclone复制")
+
         else:
             log.info("目录同步转移模式为：复制")
     else:
@@ -187,43 +197,21 @@ def check_config(config):
     # 检查PT配置
     if config.get_config('pt'):
         pt_client = config.get_config('pt').get('pt_client')
-        log.info("PT下载软件设置为：%s" % pt_client)
-        if pt_client == "qbittorrent":
-            # 检查qbittorrent配置
-            if not config.get_config('qbittorrent'):
-                log.error("Qbittorrent未配置，将无法正常下载")
-            else:
-                save_path = config.get_config('qbittorrent').get('save_path')
-                if not save_path:
-                    log.warn("Qbittorrent未设置下载目录，可能无法正常下载")
-                else:
-                    if isinstance(save_path, dict):
-                        if not save_path.get('tv') or not save_path.get('movie'):
-                            log.warn("Qbittorrent下载目录配置不完整，可能无法正常下载！")
-        elif pt_client == "transmission":
-            # 检查qbittorrent配置
-            if not config.get_config('transmission'):
-                log.error("Transmission未配置，将无法正常下载")
-            else:
-                save_path = config.get_config('transmission').get('save_path')
-                if not save_path:
-                    log.warn("transmission下载目录未设置，可能无法正常下载")
-                else:
-                    if isinstance(save_path, dict):
-                        if not save_path.get('tv') or not save_path.get('movie'):
-                            log.warn("Transmission下载目录配置不完整，可能无法正常下载！")
+        log.info("下载软件设置为：%s" % pt_client)
                             
-        rmt_mode = config.get_config('pt').get('rmt_mode')
-        if rmt_mode:
-            rmt_mode = rmt_mode.upper()
+        rmt_mode = config.get_config('pt').get('rmt_mode', 'copy')
+        if rmt_mode == "link":
+            log.info("下载文件转移模式为：硬链接")
+        elif rmt_mode == "softlink":
+            log.info("下载文件转移模式为：软链接")
+        elif rmt_mode == "move":
+            log.info("下载文件转移模式为：移动")
+        elif rmt_mode == "rclone":
+            log.info("下载文件转移模式为：rclone移动")
+        elif rmt_mode == "rclonecopy":
+            log.info("下载文件转移模式为：rclone复制")
         else:
-            rmt_mode = "COPY"
-        if rmt_mode == "LINK":
-            log.info("PT下载文件转移模式为：硬链接")
-        elif rmt_mode == "SOFTLINK":
-            log.info("目录同步转移模式为：软链接")
-        else:
-            log.info("PT下载文件转移模式为：复制")
+            log.info("下载文件转移模式为：复制")
 
         search_indexer = config.get_config('pt').get('search_indexer')
         if search_indexer:

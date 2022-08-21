@@ -324,8 +324,8 @@ def insert_transfer_blacklist(path):
 
 # 清空黑名单记录
 def truncate_transfer_blacklist():
-    sql = "DELETE FROM TRANSFER_BLACKLIST"
-    return update_by_sql(sql)
+    update_by_sql("DELETE FROM TRANSFER_BLACKLIST")
+    update_by_sql("DELETE FROM SYNC_HISTORY")
 
 
 # 查询所有站点信息
@@ -592,7 +592,7 @@ def insert_rss_tv(media_info: MetaBase, total, lack=0, state="D",
         return False
     if not media_info.title:
         return False
-    if match and not media_info.begin_season:
+    if match and media_info.begin_season is None:
         season_str = ""
     else:
         season_str = media_info.get_season_string()
@@ -784,12 +784,12 @@ def update_site_user_statistics(site_user_infos: list):
     if not site_user_infos:
         return
     update_at = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
-    sql = "INSERT OR REPLACE INTO SITE_USER_INFO_STATISTICS(SITE, USERNAME, USER_LEVEL," \
+    sql = "INSERT OR REPLACE INTO SITE_USER_INFO_STATS(SITE, USERNAME, USER_LEVEL," \
           " JOIN_AT, UPDATE_AT," \
           " UPLOAD, DOWNLOAD, RATIO," \
           " SEEDING, LEECHING, SEEDING_SIZE," \
           " BONUS," \
-          " URL, FAVICON) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+          " URL, FAVICON, MSG_UNREAD) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
     data_list = []
 
@@ -807,10 +807,11 @@ def update_site_user_statistics(site_user_infos: list):
         bonus = site_user_info.bonus
         url = site_user_info.site_url
         favicon = site_user_info.site_favicon
+        msg_unread = site_user_info.message_unread
 
         data_list.append((
             str_sql(site), username, user_level, join_at, update_at, upload, download, ratio, seeding, leeching,
-            seeding_size, bonus, url, favicon))
+            seeding_size, bonus, url, favicon, msg_unread))
     return update_by_sql_batch(sql, data_list)
 
 
@@ -835,7 +836,7 @@ def update_site_seed_info(site_user_infos: list):
 def is_site_user_statistics_exists(url):
     if not url:
         return False
-    sql = "SELECT COUNT(1) FROM SITE_USER_INFO_STATISTICS WHERE URL = ? "
+    sql = "SELECT COUNT(1) FROM SITE_USER_INFO_STATS WHERE URL = ? "
     ret = select_by_sql(sql, (url,))
     if ret and ret[0][0] > 0:
         return True
@@ -852,15 +853,15 @@ def get_site_user_statistics(num=100, strict_urls=None):
           " JOIN_AT, UPDATE_AT," \
           " UPLOAD, DOWNLOAD, RATIO," \
           " SEEDING, LEECHING, SEEDING_SIZE," \
-          " BONUS, URL, FAVICON" \
-          " FROM SITE_USER_INFO_STATISTICS LIMIT ?"
+          " BONUS, URL, FAVICON, MSG_UNREAD" \
+          " FROM SITE_USER_INFO_STATS LIMIT ?"
     if strict_urls:
         sql = "SELECT SITE, USERNAME, USER_LEVEL," \
               " JOIN_AT, UPDATE_AT," \
               " UPLOAD, DOWNLOAD, RATIO," \
               " SEEDING, LEECHING, SEEDING_SIZE," \
-              " BONUS, URL, FAVICON" \
-              " FROM SITE_USER_INFO_STATISTICS WHERE URL in {} LIMIT ?".format(tuple(strict_urls + ["__DUMMY__"]))
+              " BONUS, URL, FAVICON, MSG_UNREAD" \
+              " FROM SITE_USER_INFO_STATS WHERE URL in {} LIMIT ?".format(tuple(strict_urls + ["__DUMMY__"]))
 
     return select_by_sql(sql, (num,))
 
@@ -969,15 +970,15 @@ def get_site_statistics_recent_sites(days=7, strict_urls=None):
 
 
 # 查询下载历史是否存在
-def is_exists_download_history(title, year, mtype=None):
-    if not title:
+def is_exists_download_history(title, tmdbid, mtype=None):
+    if not title or not tmdbid:
         return False
     if mtype:
-        sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE TITLE = ? AND YEAR = ? AND TYPE = ?"
-        ret = select_by_sql(sql, (str_sql(title), str_sql(year), mtype))
+        sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE (TITLE = ? OR TMDBID = ?) AND TYPE = ?"
+        ret = select_by_sql(sql, (str_sql(title), str_sql(tmdbid), mtype))
     else:
-        sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE TITLE = ? AND YEAR = ?"
-        ret = select_by_sql(sql, (str_sql(title), str_sql(year)))
+        sql = "SELECT COUNT(1) FROM DOWNLOAD_HISTORY WHERE TITLE = ? OR TMDBID = ?"
+        ret = select_by_sql(sql, (str_sql(title), str_sql(tmdbid)))
     if ret and ret[0][0] > 0:
         return True
     else:
@@ -988,18 +989,18 @@ def is_exists_download_history(title, year, mtype=None):
 def insert_download_history(media_info: MetaBase):
     if not media_info:
         return False
-    if not media_info.title or not media_info.year:
+    if not media_info.title or not media_info.tmdb_id:
         return False
-    if is_exists_download_history(media_info.title, media_info.year, media_info.type.value):
-        sql = "UPDATE DOWNLOAD_HISTORY SET TORRENT = ?, ENCLOSURE = ?, DESC = ?, DATE = ?, SITE = ? WHERE TITLE = ? AND YEAR = ? AND TYPE = ?"
+    if is_exists_download_history(media_info.title, media_info.tmdb_id, media_info.type.value):
+        sql = "UPDATE DOWNLOAD_HISTORY SET TORRENT = ?, ENCLOSURE = ?, DESC = ?, DATE = ?, SITE = ? WHERE TITLE = ? AND TMDBID = ? AND TYPE = ?"
         return update_by_sql(sql, (str_sql(media_info.org_string),
                                    str_sql(media_info.enclosure),
                                    str_sql(media_info.description),
                                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
                                    str_sql(media_info.site),
                                    str_sql(media_info.title),
-                                   str_sql(media_info.year),
-                                   media_info.type.value,))
+                                   str_sql(media_info.tmdb_id),
+                                   media_info.type.value))
     else:
         sql = "INSERT INTO DOWNLOAD_HISTORY(TITLE,YEAR,TYPE,TMDBID,VOTE,POSTER,OVERVIEW,TORRENT,ENCLOSURE,DESC,DATE,SITE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         return update_by_sql(sql, (str_sql(media_info.title),
@@ -1013,7 +1014,7 @@ def insert_download_history(media_info: MetaBase):
                                    str_sql(media_info.enclosure),
                                    str_sql(media_info.description),
                                    time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())),
-                                   str_sql(media_info.site),))
+                                   str_sql(media_info.site)))
 
 
 # 查询下载历史
@@ -1031,11 +1032,11 @@ def get_download_history(date=None, hid=None, num=30, page=1):
 
 
 # 根据标题和年份检查是否下载过
-def is_media_downloaded(title, year):
-    if is_exists_download_history(title, year):
+def is_media_downloaded(title, tmdbid):
+    if is_exists_download_history(title, tmdbid):
         return True
-    sql = "SELECT COUNT(1) FROM TRANSFER_HISTORY WHERE TITLE = ? AND YEAR = ?"
-    ret = select_by_sql(sql, (str_sql(title), str_sql(year)))
+    sql = "SELECT COUNT(1) FROM TRANSFER_HISTORY WHERE TITLE = ?"
+    ret = select_by_sql(sql, (str_sql(title),))
     if ret and ret[0][0] > 0:
         return True
     else:

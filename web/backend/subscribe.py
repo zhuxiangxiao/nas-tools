@@ -71,7 +71,7 @@ def add_rss_subscribe(mtype, name, year,
                 if not douban_info or douban_info.get("localized_message"):
                     return 1, "无法查询到豆瓣媒体信息", None
                 media_info = MetaInfo(title="%s %s".strip() % (douban_info.get('title'), year), mtype=mtype)
-                media_info.title = media_info.get_name()
+                media_info.title = douban_info.get('title')
                 media_info.year = douban_info.get("year")
                 media_info.type = mtype
                 media_info.backdrop_path = douban_info.get("cover_url")
@@ -86,8 +86,8 @@ def add_rss_subscribe(mtype, name, year,
         # 添加订阅
         if media_info.type != MediaType.MOVIE:
             if tmdbid:
-                if season:
-                    season = int(season)
+                if season or media_info.begin_season is not None:
+                    season = int(season) if season else media_info.begin_season
                     total_episode = media.get_tmdb_season_episodes_num(sea=season, tmdbid=tmdbid)
                 else:
                     # 查询季及集信息

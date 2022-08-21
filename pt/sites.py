@@ -3,6 +3,7 @@ import traceback
 from datetime import datetime
 from multiprocessing.dummy import Pool as ThreadPool
 from threading import Lock
+from urllib import parse
 
 import log
 from message.send import Message
@@ -36,13 +37,15 @@ class Sites:
         self.__sites_data = {}
         self.__last_update_time = None
 
-    def get_sites(self, siteid=None):
+    def get_sites(self, siteid=None, siteurl=None):
         """
         获取站点配置
         """
         ret_sites = []
         for site in self.__pt_sites:
-            # 站点过滤规则为|分隔的第2位，第1位暂时未使用
+            # 是否解析种子详情为|分隔的第1位
+            site_parse = str(site[9]).split("|")[0] or "Y"
+            # 站点过滤规则为|分隔的第2位
             rule_groupid = str(site[9]).split("|")[1] if site[9] and len(str(site[9]).split("|")) > 1 else ""
             if rule_groupid:
                 rule_name = self.filtersites.get_rule_groups(rule_groupid).get("name") or ""
@@ -56,12 +59,16 @@ class Sites:
                 "signurl": site[4],
                 "cookie": site[5],
                 "rule": rule_groupid,
-                "rule_name": rule_name
+                "rule_name": rule_name,
+                "parse": site_parse
             }
             if siteid and int(site[0]) == int(siteid):
                 return site_info
+            url = site[3] if not site[4] else site[4]
+            if siteurl and url and parse.urlparse(siteurl).netloc == parse.urlparse(url).netloc:
+                return site_info
             ret_sites.append(site_info)
-        if siteid:
+        if siteid or siteurl:
             return {}
         return ret_sites
 
@@ -122,6 +129,12 @@ class Sites:
                     self.__sites_data.update({site_name: {"err_msg": site_user_info.err_msg}})
                     return
 
+                # 发送通知，存在未读消息
+                if site_user_info.message_unread > 0:
+                    if self.__sites_data.get(site_name, {}).get('message_unread') != site_user_info.message_unread:
+                        self.message.sendmsg(
+                            title=f"站点 {site_user_info.site_name} 收到 {site_user_info.message_unread} 条新消息，请登陆查看")
+
                 self.__sites_data.update({site_name: {"upload": site_user_info.upload,
                                                       "username": site_user_info.username,
                                                       "user_level": site_user_info.user_level,
@@ -133,7 +146,8 @@ class Sites:
                                                       "leeching": site_user_info.leeching,
                                                       "bonus": site_user_info.bonus,
                                                       "url": site_url,
-                                                      "err_msg": site_user_info.err_msg}
+                                                      "err_msg": site_user_info.err_msg,
+                                                      "message_unread": site_user_info.message_unread}
                                           })
 
                 return site_user_info
@@ -186,7 +200,7 @@ class Sites:
                             status.append("%s 签到失败，Cookie已过期" % pt_task)
                         else:
                             status.append("%s 签到成功" % pt_task)
-                    elif res.status_code:
+                    elif res and res.status_code:
                         status.append("%s 签到失败，状态码：%s" % (pt_task, res.status_code))
                     else:
                         status.append("%s 签到失败，无法打开网站" % pt_task)
