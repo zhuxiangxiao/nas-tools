@@ -5,8 +5,8 @@ import time
 from collections import deque
 from html import escape
 from logging.handlers import RotatingFileHandler
+
 from config import Config
-from utils.sysmsg_helper import MessageCenter
 
 lock = threading.Lock()
 LOG_QUEUE = deque(maxlen=200)
@@ -15,7 +15,7 @@ LOG_INDEX = 0
 
 class Logger:
     logger = None
-    __instance = None
+    __instance = {}
     __config = None
 
     __loglevels = {
@@ -24,26 +24,29 @@ class Logger:
         "error": logging.ERROR
     }
 
-    def __init__(self):
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, module):
+        self.logger = logging.getLogger(module)
         self.__config = Config()
         logtype = self.__config.get_config('app').get('logtype') or "file"
         loglevel = self.__config.get_config('app').get('loglevel') or "info"
         self.logger.setLevel(level=self.__loglevels.get(loglevel))
         if logtype == "server":
-            logserver = self.__config.get_config('app').get('logserver')
-            logip = logserver.split(':')[0]
-            logport = int(logserver.split(':')[1])
+            logserver = self.__config.get_config('app').get('logserver', '').split(':')
+            logip = logserver[0]
+            if len(logserver) > 1:
+                logport = int(logserver[1] or '514')
+            else:
+                logport = 514
             log_server_handler = logging.handlers.SysLogHandler((logip, logport),
                                                                 logging.handlers.SysLogHandler.LOG_USER)
             log_server_handler.setFormatter(logging.Formatter('%(filename)s: %(message)s'))
             self.logger.addHandler(log_server_handler)
         else:
             # 记录日志到文件
-            logpath = self.__config.get_config('app').get('logpath') or ""
+            logpath = os.environ.get('NASTOOL_LOG') or self.__config.get_config('app').get('logpath') or ""
             if not os.path.exists(logpath):
                 os.makedirs(logpath)
-            log_file_handler = RotatingFileHandler(filename=os.path.join(logpath, __name__ + ".txt"),
+            log_file_handler = RotatingFileHandler(filename=os.path.join(logpath, module + ".txt"),
                                                    maxBytes=5 * 1024 * 1024,
                                                    backupCount=3,
                                                    encoding='utf-8')
@@ -55,16 +58,14 @@ class Logger:
         self.logger.addHandler(log_console_handler)
 
     @staticmethod
-    def get_instance():
-        if Logger.__instance:
-            return Logger.__instance
-        try:
-            lock.acquire()
-            if not Logger.__instance:
-                Logger.__instance = Logger()
-        finally:
-            lock.release()
-        return Logger.__instance
+    def get_instance(module):
+        if not module:
+            module = "run"
+        if Logger.__instance.get(module):
+            return Logger.__instance.get(module)
+        with lock:
+            Logger.__instance[module] = Logger(module)
+        return Logger.__instance.get(module)
 
 
 def __append_log_queue(level, text):
@@ -74,24 +75,23 @@ def __append_log_queue(level, text):
         LOG_INDEX += 1
 
 
-def debug(text):
-    return Logger.get_instance().logger.debug(text)
+def debug(text, module=None):
+    return Logger.get_instance(module).logger.debug(text)
 
 
-def info(text):
+def info(text, module=None):
     __append_log_queue("INFO", text)
-    return Logger.get_instance().logger.info(text)
+    return Logger.get_instance(module).logger.info(text)
 
 
-def error(text):
+def error(text, module=None):
     __append_log_queue("ERROR", text)
-    MessageCenter().insert_system_message(level="ERROR", title=text)
-    return Logger.get_instance().logger.error(text)
+    return Logger.get_instance(module).logger.error(text)
 
 
-def warn(text):
+def warn(text, module=None):
     __append_log_queue("WARN", text)
-    return Logger.get_instance().logger.warning(text)
+    return Logger.get_instance(module).logger.warning(text)
 
 
 def console(text):

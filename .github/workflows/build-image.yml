@@ -6,6 +6,7 @@ on:
       - master
     paths:
       - version.py
+      - docker/Dockerfile
       - .github/workflows/build-image.yml
 jobs:
   build:
@@ -45,7 +46,6 @@ jobs:
           context: .
           file: docker/Dockerfile
           platforms: |
-            linux/386
             linux/amd64
             linux/arm64
           push: true

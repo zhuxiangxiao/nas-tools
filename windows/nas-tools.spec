@@ -28,20 +28,32 @@ def collect_pkg_data(package, include_py_files=False, subdir=None):
 
     return data_toc
 
-pkg_data = collect_pkg_data('web')  # <<< Put the name of your package here
+pkg_data1 = collect_pkg_data('web')
+pkg_data2 = collect_pkg_data('config')
+pkg_data3 = collect_pkg_data('db_scripts', include_py_files=True) # <<< Put the name of your package here
 # <<< END ADDED PART
 
 
+# <<< START PATHEX PART
+pathex_tp = []
+with open("third_party.txt") as third_party:
+    for third_party_lib in third_party:
+        pathex_tp.append(('./../third_party/' + third_party_lib).replace("\n", ""))
+# <<< END PATHEX PART
 
 block_cipher = None
 
 
 a = Analysis(
              ['./../run.py'],
-             pathex=[],
+             pathex=pathex_tp,
              binaries=[],
              datas=[],
-             hiddenimports=[],
+             hiddenimports=['Crypto.Math',
+                            'Crypto.Cipher',
+                            'Crypto.Util',
+                            'Crypto.Hash',
+                            'Crypto.Protocol',],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
@@ -53,13 +65,16 @@ a = Analysis(
 )
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 a.datas += [('./nas-tools.ico', './nas-tools.ico', 'DATA')]
+a.datas += [('./third_party.txt', './third_party.txt', 'DATA')]
 exe = EXE(
           pyz,
           a.scripts,
           a.binaries,
           a.zipfiles,
           a.datas,
-          pkg_data,
+          pkg_data1,
+          pkg_data2,
+          pkg_data3,
           [],
           name='nas-tools',
           debug=False,
@@ -73,5 +88,5 @@ exe = EXE(
           target_arch=None,
           codesign_identity=None,
           entitlements_file=None,
-	        icon='nas-tools.ico'
+	      icon='nas-tools.ico'
 )

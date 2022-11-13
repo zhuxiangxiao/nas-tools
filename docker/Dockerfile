@@ -15,8 +15,8 @@ RUN python_ver=$(python3 -V | awk '{print $2}') \
     && echo 'fs.inotify.max_user_watches=524288' >> /etc/sysctl.conf \
     && echo 'fs.inotify.max_user_instances=524288' >> /etc/sysctl.conf \
     && git config --global pull.ff only \
-    && git clone -b master ${REPO_URL} --depth=1 ${WORKDIR} \
-    && git config --global --add safe.directory ${WORKDIR} \
-    && mkdir -p /var/log/supervisor
+    && git clone -b master ${REPO_URL} ${WORKDIR} --recurse-submodule \
+    && git config --global --add safe.directory ${WORKDIR}
+EXPOSE 3000
 VOLUME ["/config"]
 ENTRYPOINT ["/nas-tools/docker/entrypoint.sh"]
