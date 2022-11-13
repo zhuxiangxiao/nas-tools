@@ -55,6 +55,9 @@ class Client115(IDownloadClient):
     def get_completed_torrents(self, **kwargs):
         return self.get_torrents(status=[2])
 
+    def get_completed_not_seed_torrents(self, seeding_trackers):
+        return []
+
     def get_downloading_torrents(self, **kwargs):
         return self.get_torrents(status=[0, 1])
 

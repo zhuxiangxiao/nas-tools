@@ -93,6 +93,26 @@ class Transmission(IDownloadClient):
         except Exception as err:
             print(str(err))
             return []
+    def get_completed_not_seed_torrents(self, seeding_trackers):
+        """
+        查询可以清单的种子
+        :param seeding_trackers: 做种白名单关键词
+        :return: 可以清理的种子ID列表
+        """
+        torrents = self.get_completed_torrents(tag=None)
+        remove_torrents = []
+        for torrent in torrents:
+            tracker_urls = list(map(lambda x: x['announce'], torrent._fields["trackerStats"].value))
+            if not tracker_urls:
+                log.info("【PT】%s tracker为空，已达清理条件，进行清理..." % (torrent.name))
+                remove_torrents.append(torrent)
+                continue
+            if any(any(seeding_tracker in track_url for seeding_tracker in seeding_trackers) for track_url in
+                   tracker_urls):
+                continue
+            log.info("【PT】%s 非指定做种tracker,tracker为%s，已达清理条件，进行清理..." % (torrent.name, tracker_urls[0]))
+            remove_torrents.append(torrent.id)
+        return remove_torrents
 
     def get_downloading_torrents(self, tag=None):
         """

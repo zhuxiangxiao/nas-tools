@@ -61,6 +61,9 @@ class Aria2(IDownloadClient):
     def get_completed_torrents(self, **kwargs):
         return self.get_torrents(status="completed")
 
+    def get_completed_not_seed_torrents(self, seeding_trackers):
+        return []
+
     def set_torrents_status(self, ids):
         return self.delete_torrents(ids=ids, delete_file=False)
 

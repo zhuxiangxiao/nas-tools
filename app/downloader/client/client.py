@@ -78,6 +78,13 @@ class IDownloadClient(metaclass=ABCMeta):
         读取下载完成的种子信息
         """
         pass
+    
+    @abstractmethod
+    def get_completed_not_seed_torrents(self, seeding_trackers):
+        """
+        读取下载完成的种子信息
+        """
+        pass
 
     @abstractmethod
     def set_torrents_status(self, ids):

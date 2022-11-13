@@ -329,6 +329,22 @@ class Downloader:
         finally:
             lock.release()
 
+    def pt_remove_not_seed_torrents(self):
+        """
+        做种清理，清理非指定tracker的种子
+        """
+        if not self.client:
+            return False
+        if not self.seeding_trackers:
+            return True
+        try:
+            lock.acquire()
+            for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self.seeding_trackers):
+                self.delete_torrents(torrent)
+            log.info("【PT】PT做种清理完成")
+        finally:
+            lock.release()
+
     def get_downloading_torrents(self):
         """
         查询正在下载中的种子信息

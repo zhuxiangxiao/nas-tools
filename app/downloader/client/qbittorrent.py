@@ -92,6 +92,9 @@ class Qbittorrent(IDownloadClient):
         torrents, _ = self.get_torrents(status=["completed"], tag=tag)
         return torrents
 
+    def get_completed_not_seed_torrents(self, seeding_trackers):
+        return []
+    
     def get_downloading_torrents(self, tag=None):
         """
         获取正在下载的种子
