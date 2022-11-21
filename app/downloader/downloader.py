@@ -22,6 +22,7 @@ class Downloader:
     _client = None
     _client_type = None
     _seeding_time = None
+    _seeding_trackers = None
     _pt_monitor_only = None
     _download_order = None
     _pt_rmt_mode = None
@@ -59,6 +60,7 @@ class Downloader:
             elif pt_client == "aria2":
                 self._client_type = DownloaderType.Aria2
             self._seeding_time = pt.get('pt_seeding_time')
+            self._seeding_trackers = pt.get('seeding_tracker_keywords')
             if self._seeding_time:
                 try:
                     self._seeding_time = round(float(self._seeding_time) * 24 * 3600)
@@ -335,11 +337,11 @@ class Downloader:
         """
         if not self.client:
             return False
-        if not self.seeding_trackers:
+        if not self._seeding_trackers:
             return True
         try:
             lock.acquire()
-            for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self.seeding_trackers):
+            for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self._seeding_trackers):
                 self.delete_torrents(torrent)
             log.info("【PT】PT做种清理完成")
         finally:

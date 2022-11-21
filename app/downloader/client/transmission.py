@@ -93,6 +93,7 @@ class Transmission(IDownloadClient):
         except Exception as err:
             print(str(err))
             return []
+
     def get_completed_not_seed_torrents(self, seeding_trackers):
         """
         查询可以清单的种子
