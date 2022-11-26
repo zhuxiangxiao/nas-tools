@@ -376,13 +376,13 @@ class Downloader:
         """
         做种清理，清理非指定tracker的种子
         """
-        if not self.client:
+        if not self.default_client:
             return False
         if not self._seeding_trackers:
             return True
         try:
             lock.acquire()
-            for torrent in self.client.get_completed_not_seed_torrents(seeding_trackers=self._seeding_trackers):
+            for torrent in self.default_client.get_completed_not_seed_torrents(seeding_trackers=self._seeding_trackers):
                 self.delete_torrents(torrent)
             log.info("【PT】PT做种清理完成")
         finally:
