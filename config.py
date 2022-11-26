@@ -1,7 +1,5 @@
 import os
 import shutil
-from threading import Lock
-
 import ruamel.yaml
 
 # 菜单对应关系，配置WeChat应用中配置的菜单ID与执行命令的对应关系，需要手工修改
@@ -91,7 +89,7 @@ KEYWORD_DIFF_SCORE_THRESHOLD = 30
 KEYWORD_BLACKLIST = ['中字', '韩语', '双字', '中英', '日语', '双语', '国粤', 'HD', 'BD', '中日', '粤语', '完全版', '法语',
                      '西班牙语', 'HRHDTVAC3264', '未删减版', '未删减', '国语', '字幕组', '人人影视', 'www66ystv',
                      '人人影视制作', '英语', 'www6vhaotv', '无删减版', '完成版', '德意']
-#  网络测试对象
+# 网络测试对象
 NETTEST_TARGETS = ["www.themoviedb.org",
                    "api.themoviedb.org",
                    "api.tmdb.org",
@@ -113,28 +111,19 @@ SITE_CHECKIN_XPATH = [
     '//a[contains(@href, "sign_in")]'
 ]
 
-# 线程锁
-lock = Lock()
+# 站点详情页字幕下载链接识别XPATH
+SITE_SUBTITLE_XPATH = [
+    '//td[@class="rowhead"][text()="字幕"]/following-sibling::td//a/@href',
+]
 
 
 class Config(object):
-    _INSTANSE = None
-    _INSTANSE_FLAG = False
     _config = {}
     _config_path = None
 
-    def __new__(cls, *args, **kwargs):
-        with lock:
-            if not cls._INSTANSE:
-                cls._INSTANSE = super().__new__(cls)
-            return cls._INSTANSE
-
     def __init__(self):
-        with lock:
-            if Config._INSTANSE_FLAG:
-                return
-            Config._INSTANSE_FLAG = True
         self._config_path = os.environ.get('NASTOOL_CONFIG')
+        os.environ['TZ'] = 'Asia/Shanghai'
         self.init_config()
 
     def init_config(self):
@@ -147,11 +136,11 @@ class Config(object):
                 cfg_tp_path = cfg_tp_path.replace("\\", "/")
                 shutil.copy(cfg_tp_path, self._config_path)
                 print("【Config】config.yaml 配置文件不存在，已将配置文件模板复制到配置目录...")
-            with open(self._config_path, mode='r', encoding='utf-8') as f:
+            with open(self._config_path, mode='r', encoding='utf-8') as cf:
                 try:
                     # 读取配置
-                    print("正在加载配置...")
-                    self._config = ruamel.yaml.YAML().load(f)
+                    print("正在加载配置：%s" % self._config_path)
+                    self._config = ruamel.yaml.YAML().load(cf)
                 except Exception as e:
                     print("【Config】配置文件 config.yaml 格式出现严重错误！请检查：%s" % str(e))
                     self._config = {}
@@ -172,9 +161,9 @@ class Config(object):
 
     def save_config(self, new_cfg):
         self._config = new_cfg
-        with open(self._config_path, mode='w', encoding='utf-8') as f:
+        with open(self._config_path, mode='w', encoding='utf-8') as sf:
             yaml = ruamel.yaml.YAML()
-            return yaml.dump(new_cfg, f)
+            return yaml.dump(new_cfg, sf)
 
     def get_config_path(self):
         return os.path.dirname(self._config_path)
@@ -185,3 +174,13 @@ class Config(object):
 
     def get_inner_config_path(self):
         return os.path.join(self.get_root_path(), "config")
+
+    def get_domain(self):
+        domain = (self.get_config('app') or {}).get('domain')
+        if domain and not domain.startswith('http'):
+            domain = "http://" + domain
+        return domain
+
+
+# 配置实例
+CONFIG = Config()

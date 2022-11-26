@@ -5,7 +5,7 @@ import transmission_rpc
 
 import log
 from app.utils.types import DownloaderType
-from config import Config
+from config import CONFIG
 from app.downloader.client.client import IDownloadClient
 
 
@@ -20,8 +20,7 @@ class Transmission(IDownloadClient):
 
     def get_config(self):
         # 读取配置文件
-        config = Config()
-        transmission = config.get_config('transmission')
+        transmission = CONFIG.get_config('transmission')
         if transmission:
             self.host = transmission.get('trhost')
             self.port = int(transmission.get('trport')) if str(transmission.get('trport')).isdigit() else 0
@@ -258,11 +257,13 @@ class Transmission(IDownloadClient):
                     download_dir=None,
                     upload_limit=None,
                     download_limit=None,
+                    cookie=None,
                     **kwargs):
         try:
             ret = self.trc.add_torrent(torrent=content,
                                        download_dir=download_dir,
-                                       paused=is_paused)
+                                       paused=is_paused,
+                                       cookies=cookie)
             if ret and ret.id:
                 if upload_limit:
                     self.set_uploadspeed_limit(ret.id, int(upload_limit))

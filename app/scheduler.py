@@ -8,9 +8,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import log
 from app.doubansync import DoubanSync
 from app.mediaserver import MediaServer
-from config import AUTO_REMOVE_TORRENTS_INTERVAL, PT_TRANSFER_INTERVAL, Config, METAINFO_SAVE_INTERVAL, \
+from app.subscribe import Subscribe
+from config import AUTO_REMOVE_TORRENTS_INTERVAL, PT_TRANSFER_INTERVAL, METAINFO_SAVE_INTERVAL, \
     SYNC_TRANSFER_INTERVAL, RSS_CHECK_INTERVAL, REFRESH_PT_DATA_INTERVAL, \
-    RSS_REFRESH_TMDB_INTERVAL, META_DELETE_UNKNOWN_INTERVAL, REFRESH_WALLPAPER_INTERVAL
+    RSS_REFRESH_TMDB_INTERVAL, META_DELETE_UNKNOWN_INTERVAL, REFRESH_WALLPAPER_INTERVAL, CONFIG
 from app.downloader import Downloader
 from app.rss import Rss
 from app.sites import Sites
@@ -23,18 +24,17 @@ from web.backend.wallpaper import get_login_wallpaper
 @singleton
 class Scheduler:
     SCHEDULER = None
-    __pt = None
-    __douban = None
-    __media = None
+    _pt = None
+    _douban = None
+    _media = None
 
     def __init__(self):
         self.init_config()
 
     def init_config(self):
-        config = Config()
-        self.__pt = config.get_config('pt')
-        self.__media = config.get_config('media')
-        self.__douban = config.get_config('douban')
+        self._pt = CONFIG.get_config('pt')
+        self._media = CONFIG.get_config('media')
+        self._douban = CONFIG.get_config('douban')
 
     def run_service(self):
         """
@@ -43,9 +43,9 @@ class Scheduler:
         self.SCHEDULER = BackgroundScheduler(timezone="Asia/Shanghai")
         if not self.SCHEDULER:
             return
-        if self.__pt:
+        if self._pt:
             # 种子清理
-            pt_seeding_time = self.__pt.get('pt_seeding_time')
+            pt_seeding_time = self._pt.get('pt_seeding_time')
             if pt_seeding_time:
                 self.SCHEDULER.add_job(Downloader().remove_torrents,
                                        'interval',
@@ -59,7 +59,7 @@ class Scheduler:
                 log.info("PT下载自动删非做种站点种子服务启动启动...")
 
             # 站点签到
-            ptsignin_cron = str(self.__pt.get('ptsignin_cron'))
+            ptsignin_cron = str(self._pt.get('ptsignin_cron'))
             if ptsignin_cron:
                 if '-' in ptsignin_cron:
                     try:
@@ -110,13 +110,13 @@ class Scheduler:
                         log.info("站点自动签到服务启动")
 
             # 下载文件转移
-            pt_monitor = self.__pt.get('pt_monitor')
+            pt_monitor = self._pt.get('pt_monitor')
             if pt_monitor:
                 self.SCHEDULER.add_job(Downloader().transfer, 'interval', seconds=PT_TRANSFER_INTERVAL)
                 log.info("下载文件转移服务启动")
 
             # RSS下载器
-            pt_check_interval = self.__pt.get('pt_check_interval')
+            pt_check_interval = self._pt.get('pt_check_interval')
             if pt_check_interval:
                 if isinstance(pt_check_interval, str) and pt_check_interval.isdigit():
                     pt_check_interval = int(pt_check_interval)
@@ -131,7 +131,7 @@ class Scheduler:
                     log.info("RSS订阅服务启动")
 
             # RSS订阅定时检索
-            search_rss_interval = self.__pt.get('search_rss_interval')
+            search_rss_interval = self._pt.get('search_rss_interval')
             if search_rss_interval:
                 if isinstance(search_rss_interval, str) and search_rss_interval.isdigit():
                     search_rss_interval = int(search_rss_interval)
@@ -142,12 +142,12 @@ class Scheduler:
                         log.error("订阅定时搜索周期 配置格式错误：%s" % str(e))
                         search_rss_interval = 0
                 if search_rss_interval:
-                    self.SCHEDULER.add_job(Rss().rsssearch_all, 'interval', hours=search_rss_interval * 24)
+                    self.SCHEDULER.add_job(Subscribe().subscribe_search_all, 'interval', hours=search_rss_interval * 24)
                     log.info("订阅定时搜索服务启动")
 
         # 豆瓣电影同步
-        if self.__douban:
-            douban_interval = self.__douban.get('interval')
+        if self._douban:
+            douban_interval = self._douban.get('interval')
             if douban_interval:
                 if isinstance(douban_interval, str):
                     if douban_interval.isdigit():
@@ -163,8 +163,8 @@ class Scheduler:
                     log.info("豆瓣同步服务启动")
 
         # 媒体库同步
-        if self.__media:
-            mediasync_interval = self.__media.get("mediasync_interval")
+        if self._media:
+            mediasync_interval = self._media.get("mediasync_interval")
             if mediasync_interval:
                 if isinstance(mediasync_interval, str):
                     if mediasync_interval.isdigit():
@@ -186,7 +186,7 @@ class Scheduler:
         self.SCHEDULER.add_job(Sync().transfer_mon_files, 'interval', seconds=SYNC_TRANSFER_INTERVAL)
 
         # RSS队列中检索
-        self.SCHEDULER.add_job(Rss().rsssearch, 'interval', seconds=RSS_CHECK_INTERVAL)
+        self.SCHEDULER.add_job(Subscribe().subscribe_search, 'interval', seconds=RSS_CHECK_INTERVAL)
 
         # 站点数据刷新
         self.SCHEDULER.add_job(Sites().refresh_pt_date_now,
@@ -195,7 +195,7 @@ class Scheduler:
                                next_run_time=datetime.datetime.now()+datetime.timedelta(minutes=1))
 
         # 豆瓣RSS转TMDB，定时更新TMDB数据
-        self.SCHEDULER.add_job(Rss().refresh_rss_metainfo, 'interval', hours=RSS_REFRESH_TMDB_INTERVAL)
+        self.SCHEDULER.add_job(Subscribe().refresh_rss_metainfo, 'interval', hours=RSS_REFRESH_TMDB_INTERVAL)
 
         # 定时清除未识别的缓存
         self.SCHEDULER.add_job(MetaHelper().delete_unknown_meta, 'interval', hours=META_DELETE_UNKNOWN_INTERVAL)

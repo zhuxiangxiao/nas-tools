@@ -8,7 +8,7 @@ from app.utils.commons import singleton
 from app.utils.string_utils import StringUtils
 
 import log
-from config import Config
+from config import CONFIG
 from app.media.doubanapi import DoubanApi, DoubanWeb
 from app.media import MetaInfo
 from app.utils import RequestUtils
@@ -23,8 +23,8 @@ class DouBan:
     doubanapi = None
     doubanweb = None
     message = None
-    __movie_num = 30
-    __tv_num = 30
+    _movie_num = 30
+    _tv_num = 30
 
     def __init__(self):
         self.doubanapi = DoubanApi()
@@ -32,8 +32,7 @@ class DouBan:
         self.init_config()
 
     def init_config(self):
-        config = Config()
-        douban = config.get_config('douban')
+        douban = CONFIG.get_config('douban')
         if douban:
             # Cookie
             self.cookie = douban.get('cookie')
@@ -151,6 +150,13 @@ class DouBan:
         for web_info in web_infos:
             web_info["id"] = web_info.get("url").split("/")[-2]
         return web_infos
+
+    def get_user_info(self, userid, wait=False):
+        if wait:
+            time = round(random.uniform(1, 5), 1)
+            log.info("【Douban】随机休眠：%s 秒" % time)
+            sleep(time)
+        return self.doubanweb.user(cookie=self.cookie, userid=userid)
 
     def search_douban_medias(self, keyword, mtype: MediaType = None, num=20, season=None, episode=None):
         """
@@ -276,7 +282,7 @@ class DouBan:
     def get_douban_online_movie(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.movie_showing(start=(page - 1) * self.__movie_num, count=self.__movie_num)
+        infos = self.doubanapi.movie_showing(start=(page - 1) * self._movie_num, count=self._movie_num)
         if not infos:
             return []
         return self.__refresh_movie(infos.get("subject_collection_items"))
@@ -284,7 +290,7 @@ class DouBan:
     def get_douban_hot_movie(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.movie_hot_gaia(start=(page - 1) * self.__movie_num, count=self.__movie_num)
+        infos = self.doubanapi.movie_hot_gaia(start=(page - 1) * self._movie_num, count=self._movie_num)
         if not infos:
             return []
         return self.__refresh_movie(infos.get("subject_collection_items"))
@@ -292,7 +298,7 @@ class DouBan:
     def get_douban_hot_anime(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.tv_animation(start=(page - 1) * self.__tv_num, count=self.__tv_num)
+        infos = self.doubanapi.tv_animation(start=(page - 1) * self._tv_num, count=self._tv_num)
         if not infos:
             return []
         return self.__refresh_tv(infos.get("subject_collection_items"))
@@ -300,7 +306,7 @@ class DouBan:
     def get_douban_hot_tv(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.tv_hot(start=(page - 1) * self.__tv_num, count=self.__tv_num)
+        infos = self.doubanapi.tv_hot(start=(page - 1) * self._tv_num, count=self._tv_num)
         if not infos:
             return []
         return self.__refresh_tv(infos.get("subject_collection_items"))
@@ -308,7 +314,7 @@ class DouBan:
     def get_douban_new_movie(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.movie_soon(start=(page - 1) * self.__movie_num, count=self.__movie_num)
+        infos = self.doubanapi.movie_soon(start=(page - 1) * self._movie_num, count=self._movie_num)
         if not infos:
             return []
         return self.__refresh_movie(infos.get("subject_collection_items"))
@@ -316,7 +322,7 @@ class DouBan:
     def get_douban_hot_show(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.show_hot(start=(page - 1) * self.__tv_num, count=self.__tv_num)
+        infos = self.doubanapi.show_hot(start=(page - 1) * self._tv_num, count=self._tv_num)
         if not infos:
             return []
         return self.__refresh_tv(infos.get("subject_collection_items"))
@@ -324,7 +330,7 @@ class DouBan:
     def get_douban_top250_movie(self, page=1):
         if not self.doubanapi:
             return []
-        infos = self.doubanapi.movie_top250(start=(page - 1) * self.__movie_num, count=self.__movie_num)
+        infos = self.doubanapi.movie_top250(start=(page - 1) * self._movie_num, count=self._movie_num)
         if not infos:
             return []
         return self.__refresh_movie(infos.get("subject_collection_items"))

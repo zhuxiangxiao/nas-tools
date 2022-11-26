@@ -4,7 +4,7 @@ import qbittorrentapi
 
 import log
 from app.utils.types import DownloaderType
-from config import Config, PT_TAG
+from config import CONFIG, PT_TAG
 from app.downloader.client.client import IDownloadClient
 from pkg_resources import parse_version as v
 
@@ -18,8 +18,7 @@ class Qbittorrent(IDownloadClient):
 
     def get_config(self):
         # 读取配置文件
-        config = Config()
-        qbittorrent = config.get_config('qbittorrent')
+        qbittorrent = CONFIG.get_config('qbittorrent')
         if qbittorrent:
             self.host = qbittorrent.get('qbhost')
             self.port = int(qbittorrent.get('qbport')) if str(qbittorrent.get('qbport')).isdigit() else 0
@@ -201,7 +200,8 @@ class Qbittorrent(IDownloadClient):
                     upload_limit=None,
                     download_limit=None,
                     ratio_limit=None,
-                    seeding_time_limit=None
+                    seeding_time_limit=None,
+                    cookie=None
                     ):
         """
         添加种子
@@ -215,6 +215,7 @@ class Qbittorrent(IDownloadClient):
         :param download_limit: 下载限速 Kb/s
         :param ratio_limit: 分享率限制
         :param seeding_time_limit: 做种时间限制
+        :param cookie: 站点Cookie用于辅助下载种子
         :return: bool
         """
         if not self.qbc or not content:
@@ -269,7 +270,8 @@ class Qbittorrent(IDownloadClient):
                                             download_limit=download_limit,
                                             ratio_limit=ratio_limit,
                                             seeding_time_limit=seeding_time_limit,
-                                            use_auto_torrent_management=use_auto_torrent_management)
+                                            use_auto_torrent_management=use_auto_torrent_management,
+                                            cookie=cookie)
             return True if qbc_ret and str(qbc_ret).find("Ok") != -1 else False
         except Exception as err:
             print(str(err))
