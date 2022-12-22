@@ -1,18 +1,19 @@
 import requests
 
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import IndexerType
-from config import CONFIG
-from app.indexer.indexer import IIndexer
+from config import Config
+from app.indexer.index_client import IIndexClient
 from app.utils import RequestUtils
 from app.helper import IndexerConf
 
 
-class Jackett(IIndexer):
+class Jackett(IIndexClient):
     index_type = IndexerType.JACKETT.value
     _password = None
 
     def init_config(self):
-        jackett = CONFIG.get_config('jackett')
+        jackett = Config().get_config('jackett')
         if jackett:
             self.api_key = jackett.get('api_key')
             self._password = jackett.get('password')
@@ -53,10 +54,10 @@ class Jackett(IIndexer):
                                  "name": v["name"],
                                  "domain": f'{self.host}api/v2.0/indexers/{v["id"]}/results/torznab/',
                                  "public": True if v['type'] == 'public' else False,
-                                 "buildin": False})
+                                 "builtin": False})
                     for v in ret.json()]
         except Exception as e2:
-            print(str(e2))
+            ExceptionUtils.exception_traceback(e2)
             return []
 
     def search(self, *kwargs):

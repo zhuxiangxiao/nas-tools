@@ -1,15 +1,16 @@
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import MediaServerType
 from plexapi.myplex import MyPlexAccount
 
 import log
-from config import CONFIG
-from app.mediaserver.server.server import IMediaServer
+from config import Config
+from app.mediaserver.media_client import IMediaClient
 from app.utils.commons import singleton
 from plexapi.server import PlexServer
 
 
 @singleton
-class Plex(IMediaServer):
+class Plex(IMediaClient):
     _host = None
     _token = None
     _username = None
@@ -23,7 +24,7 @@ class Plex(IMediaServer):
         self.init_config()
 
     def init_config(self):
-        plex = CONFIG.get_config('plex')
+        plex = Config().get_config('plex')
         if plex:
             self._host = plex.get('host')
             self._token = plex.get('token')
@@ -39,12 +40,14 @@ class Plex(IMediaServer):
                 try:
                     self._plex = PlexServer(self._host, self._token)
                 except Exception as e:
+                    ExceptionUtils.exception_traceback(e)
                     self._plex = None
                     log.error(f"【{self.server_type}】Plex服务器连接失败：{str(e)}")
             elif self._username and self._password and self._servername:
                 try:
                     self._plex = MyPlexAccount(self._username, self._password).resource(self._servername).connect()
                 except Exception as e:
+                    ExceptionUtils.exception_traceback(e)
                     self._plex = None
                     log.error(f"【{self.server_type}】Plex服务器连接失败：{str(e)}")
 
@@ -75,6 +78,8 @@ class Plex(IMediaServer):
             event_str = "开始播放 %s" % his.title
             activity = {"type": event_type, "event": event_str, "date": event_date}
             ret_array.append(activity)
+        if ret_array:
+            ret_array = sorted(ret_array, key=lambda x: x['date'], reverse=True)
         return ret_array
 
     def get_medias_count(self):
@@ -165,7 +170,7 @@ class Plex(IMediaServer):
         try:
             self._libraries = self._plex.library.sections()
         except Exception as err:
-            print(str(err))
+            ExceptionUtils.exception_traceback(err)
             return []
         libraries = []
         for library in self._libraries:
@@ -193,5 +198,5 @@ class Plex(IMediaServer):
                            "year": item.year,
                            "json": str(item.__dict__)}
         except Exception as err:
-            print(str(err))
+            ExceptionUtils.exception_traceback(err)
         yield {}

@@ -73,7 +73,12 @@
       {% for Task in Tasks %}
       <div class="card">
         <div class="card-header">
-          <h3 class="card-title">{{ Task.name }}</h3>
+          {% if Task.state == 'Y' %}
+          <span class="badge bg-green"></span>
+          {% else %}
+          <span class="badge bg-red"></span>
+          {% endif %}
+          <div class="ms-2"><h3 class="card-title">{{ Task.name }}</h3></div>
           <div class="ms-2">
             <a href="javascript:run_userrss_now('{{ Task.id }}')" class="btn-icon" title="立即运行任务"
               data-bs-toggle="tooltip">
@@ -86,7 +91,7 @@
             </a>
           </div>
           <div class="card-actions btn-actions">
-            <a href="javascript:show_userrss_detail('{{ Task.id }}')" class="btn-action">
+            <a href="javascript:$('#detail_{{ Task.id }}').slideToggle()" class="btn-action">
               <svg xmlns="http://www.w3.org/2000/svg" class="icon ms-1" width="20" height="20" fill="currentColor"
                 viewBox="0 0 16 16">
                 <path fill-rule="evenodd"
@@ -245,14 +250,14 @@
 {% endif %}
 <div class="modal modal-blur fade" id="modal-userrss" tabindex="-1" role="dialog" aria-hidden="true"
   data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="userrss_modal_title"></h5>
         <input type="hidden" id="userrss_id">
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
+      <div class="modal-body" style="overflow-x: hidden">
         <div class="row">
           <div class="col-lg-4">
             <div class="mb-3">
@@ -417,7 +422,7 @@
   </div>
 </div>
 <div class="modal modal-blur fade" id="modal-rss-articles" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <div class="ms-2">
@@ -471,7 +476,7 @@
   </div>
 </div>
 <div class="modal modal-blur fade" id="modal-rss-history" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered" role="document">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">订阅下载历史</h5>
@@ -537,47 +542,38 @@
     });
   }
 
-  // 折叠任务详情
-  function show_userrss_detail(taskid) {
-    if ($(`#detail_${taskid}`)[0].style["display"] == "none") {
-      $(`#detail_${taskid}`).attr("style", "display: block;");
-    } else {
-      $(`#detail_${taskid}`).attr("style", "display: none;");
-    };
-  }
-
   // 新增/编辑任务保存
   function add_or_edit_userrss_task() {
-    id = $("#userrss_id").val();
-    name = $("#userrss_name").val();
+    const id = $("#userrss_id").val();
+    const name = $("#userrss_name").val();
     if (!name) {
       $("#userrss_name").addClass("is-invalid");
       return;
     } else {
       $("#userrss_name").removeClass("is-invalid");
     }
-    interval = $("#userrss_interval").val();
+    const interval = $("#userrss_interval").val();
     if (!interval || isNaN(interval)) {
       $("#userrss_interval").addClass("is-invalid");
       return;
     } else {
       $("#userrss_interval").removeClass("is-invalid");
     }
-    address = $("#userrss_address").val();
+    const address = $("#userrss_address").val();
     if (!address) {
       $("#userrss_address").addClass("is-invalid");
       return;
     } else {
       $("#userrss_address").removeClass("is-invalid");
     }
-    parser = $("#userrss_parser").val();
+    const parser = $("#userrss_parser").val();
     if (!parser) {
       $("#userrss_parser").addClass("is-invalid");
       return;
     } else {
       $("#userrss_parser").removeClass("is-invalid");
     }
-    var params = {
+    const params = {
       id: id,
       name: name,
       address: address,
@@ -614,39 +610,40 @@
   function show_rss_articles_modal(id) {
     show_wait_process();
     ajax_post("list_rss_articles", { "id": id }, function (ret) {
-      hide_wait_process();
+      let content  ; hide_wait_process();
       $("#table-rss-articles").empty();
       if (ret.code == 0) {
-        articles = ret.data;
-        var content_th = `<thead><tr>
+        const articles = ret.data;
+        let content_th = `<thead><tr>
                           <th class="w-1"><input class="form-check-input m-0 align-middle" id="articles_check_all_btn" type="checkbox" aria-label="全选"></th>
                           <th>标题</th>
                           <th>状态</th>
                           <th>发布时间</th>
                           <th></th>
                           </tr></thead>`;
-        var content_td = '';
-        for (var i = 0; i < articles.length; i++) {
-          var article = articles[i];
-          var title = '';
-          var link = '';
-          var size = '';
-          var date = '';
-          var finish_flag = '';
+        let content_td = '';
+        for (let i = 0; i < articles.length; i++) {
+          const article = articles[i];
+          let title = '';
+          let size = '';
+          let date = '';
+          let finish_flag = '';
+          let input_checkbox = '';
           if (article.title) {
-            title_param = article.title.replace(/\'/g, "&#39;");
+            const title_param = article.title.replace(/\'/g, "&#39;");
             input_checkbox = `<input class="form-check-input m-0 align-middle" id="check_${i}" type="checkbox">
                               <input type="hidden" id="enclosure_${i}" value="${article.enclosure}">
                               <input type="hidden" id="title_${i}" value="${title_param}">`;
             title = `<span>${article.title}</span> 
                       <a class="ms-2" title="识别匹配" href='javascript:rss_article_test("${i}", "${id}", "${title_param}")' data-bs-toggle="tooltip">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-language" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
-                          <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
-                          <path d="M4 5h7"></path>
-                          <path d="M9 3v2c0 4.418 -2.239 8 -5 8"></path>
-                          <path d="M5 9c-.003 2.144 2.952 3.908 6.7 4"></path>
-                          <path d="M12 20l4 -9l4 9"></path>
-                          <path d="M19.1 18h-6.2"></path>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-text-recognition" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                           <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+                           <path d="M4 8v-2a2 2 0 0 1 2 -2h2"></path>
+                           <path d="M4 16v2a2 2 0 0 0 2 2h2"></path>
+                           <path d="M16 4h2a2 2 0 0 1 2 2v2"></path>
+                           <path d="M16 20h2a2 2 0 0 0 2 -2v-2"></path>
+                           <path d="M12 16v-7"></path>
+                           <path d="M9 9h6"></path>
                         </svg>
                       </a>`;
             if (article.link) {
@@ -665,7 +662,7 @@
           } else {
             finish_flag = `<span class="badge badge-outline text-yellow me-1 mb-1">未处理</span>`;
           }
-          download_btn = `<a href='javascript:single_article_download("${id}", "${i}")' title="下载">
+          let download_btn = `<a href='javascript:single_article_download("${id}", "${i}")' title="下载">
                             <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-download" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
                               <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
                               <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path>
@@ -673,8 +670,8 @@
                               <line x1="12" y1="4" x2="12" y2="16"></line>
                             </svg>
                           </a>`
-          var content_td = `${content_td}<tr><td>${input_checkbox}</td><td>${title}${size}<div id='info_${i}'></div></td>><td>${finish_flag}<a id='flag_${i}'></a></td><td class="text-nowrap">${date}</td><td>${download_btn}</td></tr>`;
-          content_tb = `<tbody>${content_td}</tbody>`;
+          content_td= `${content_td}<tr><td>${input_checkbox}</td><td>${title}${size}<div id='info_${i}'></div></td>><td>${finish_flag}<a id='flag_${i}'></a></td><td class="text-nowrap">${date}</td><td>${download_btn}</td></tr>`;
+          let content_tb = `<tbody>${content_td}</tbody>`;
           content = `${content_th}${content_tb}`;
         }
 
@@ -684,7 +681,7 @@
           $(".table-responsive input[type=checkbox]").prop("checked", $("#articles_check_all_btn").prop("checked"));
         });
       } else {
-        var content = `<div class="empty"><p class="empty-title">${ret.msg}</p></div>`;
+        content= `<div class="empty"><p class="empty-title">${ret.msg}</p></div>`;
         $("#table-rss-articles").append(content);
       };
       $("#article_check_id").val(id);
@@ -694,13 +691,13 @@
 
   // 获取选中按钮
   function get_article_checked(){
-    var articles = [];
+    let articles = [];
     $(".table-responsive input[type=checkbox]").each(function () {
       if ($(this).prop("checked")) {
-        checkid = $(this).attr("id");
+        const checkid = $(this).attr("id");
         if (checkid && checkid.startsWith("check_")) {
-          title = $(`#${checkid.replace("check", "title")}`).val();
-          enclosure = $(`#${checkid.replace("check", "enclosure")}`).val();
+          const title = $(`#${checkid.replace("check", "title")}`).val();
+          const enclosure = $(`#${checkid.replace("check", "enclosure")}`).val();
           if (title || enclosure) {
             articles.push({ title: title, enclosure: enclosure })
           }
@@ -713,8 +710,8 @@
 
   // 批量处理
   function batch_articles_action(flag) {
-    var articles = get_article_checked();
-    var id = $("#article_check_id").val();
+    const articles = get_article_checked();
+    const id = $("#article_check_id").val();
     if (articles.length == 0) {
       return;
     }
@@ -756,109 +753,20 @@
 
   // 单个报文下载
   function single_article_download(id, article_id) {
-    article = [{ title: $(`#title_${article_id}`).val(), enclosure: $(`#enclosure_${article_id}`).val() }];
+    const article = [{ title: $(`#title_${article_id}`).val(), enclosure: $(`#enclosure_${article_id}`).val() }];
     articles_download(id, article);
   }
 
   // rss报文测试
   function rss_article_test(id, taskid, title) {
-    var info_id = `#info_${id}`;
-    var flag_id = `#flag_${id}`;
+    const info_id = `info_${id}`;
+    const flag_id = `#flag_${id}`;
     make_cursor_busy();
     ajax_post("rss_article_test", { "taskid": taskid, "title": title }, function (ret) {
       cancel_cursor_busy();
-      if (ret.code == 0) {
-        $(info_id).empty();
+      if (ret.code === 0) {
         $(flag_id).empty();
-        var ignored_words = [];
-        var replaced_words = [];
-        var offset_words = [];
-        if (ret.data.ignored_words) {
-          ignored_words = ret.data.ignored_words;
-        }
-        if (ret.data.replaced_words) {
-          replaced_words = ret.data.replaced_words;
-        }
-        if (ret.data.offset_words) {
-          offset_words = ret.data.offset_words;
-        }
-        var words = ignored_words + replaced_words + offset_words;
-        if (words.length != 0) {
-          if (ret.data.org_string) {
-            $(info_id).append(`<div class="mb-3" ><label class="form-label">识别使用名称：<span class="badge badge-outline text-cyan me-1 mb-1" style="vertical-align: middle;white-space: normal;text-align: left;word-break: break-all;" title="自定义识别词过滤后识别用名">${ret.data.org_string}</span></label></div>`);
-          }
-          if (ignored_words.length != 0) {
-            var ignored_word_content = '<div class="mb-3"><label class="form-label">应用屏蔽词：';
-            for (ignored_word of ignored_words) {
-              ignored_word_content = ignored_word_content + `<span class="badge badge-outline text-cyan me-1 mb-1" style="vertical-align: middle;">${ignored_word}</span>`;
-            };
-            $(info_id).append(ignored_word_content + '</label></div>');
-          }
-          if (replaced_words.length != 0) {
-            var replaced_words_content = '<div class="mb-3"><label class="form-label">应用替换词：';
-            for (replaced_word of replaced_words) {
-              replaced_words_content = replaced_words_content + `<span class="badge badge-outline text-cyan me-1 mb-1" style="vertical-align: middle;">${replaced_word}</span>`;
-            };
-            $(info_id).append(replaced_words_content + '</label></div>');
-          }
-          if (offset_words.length != 0) {
-            var offset_words_content = '<div class="mb-3"><label class="form-label">应用集数偏移：';
-            for (offset_word of offset_words) {
-              offset_words_content = offset_words_content + `<span class="badge badge-outline text-cyan me-1 mb-1" style="vertical-align: middle;">${offset_word}</span>`;
-            };
-            $(info_id).append(offset_words_content + '</label></div>');
-          }
-        }
-        if (ret.data.type) {
-          $(info_id).append(`<span class="badge badge-outline text-blue me-1 mb-1" title="类型">${ret.data.type}</span>`);
-        }
-        if (ret.data.category) {
-          $(info_id).append(`<span class="badge badge-outline text-blue me-1 mb-1" title="类别">${ret.data.category}</span>`);
-        }
-        if (ret.data.name) {
-          var name_query_link = `https://www.themoviedb.org/search?query=${encodeURI(ret.data.name)}`;
-          $(info_id).append(`<span title="识别名称"><a class="badge badge-outline text-red me-1 mb-1" href="${name_query_link}" target="_blank">${ret.data.name}</a></span>`);
-        }
-        if (ret.data.title) {
-          $(info_id).append(`<span class="badge badge-outline text-red me-1 mb-1" title="标题">${ret.data.title}</span>`);
-        }
-        if (ret.data.year) {
-          $(info_id).append(`<span class="badge badge-outline text-orange me-1 mb-1" title="年份">${ret.data.year}</span>`);
-        }
-        if (ret.data.season_episode) {
-          $(info_id).append(`<span title="季集"><a class="badge badge-outline text-orange me-1 mb-1" href="${ret.data.tmdb_S_E_link}" target="_blank">${ret.data.season_episode}</a></span>`);
-        }
-        if (ret.data.part) {
-          $(info_id).append(`<span class="badge badge-outline text-orange me-1 mb-1" title="分集">${ret.data.part}</span>`);
-        }
-        if (ret.data.tmdbid) {
-          $(info_id).append(`<span title="TMDB ID"><a class="badge badge-outline text-green me-1 mb-1" href="${ret.data.tmdblink}" target="_blank">${ret.data.tmdbid}</a></span>`);
-        }
-        if (ret.data.restype) {
-          $(info_id).append(`<span class="badge me-1 mb-1" title="质量">${ret.data.restype}</span>`);
-        }
-        if (ret.data.pix) {
-          $(info_id).append(`<span class="badge me-1 mb-1" title="分辨率">${ret.data.pix}</span>`);
-        }
-        if (ret.data.video_codec) {
-          $(info_id).append(`<span class="badge me-1 mb-1" title="视频编码">${ret.data.video_codec}</span>`);
-        }
-        if (ret.data.audio_codec) {
-          $(info_id).append(`<span class="badge me-1 mb-1" title="音频编码">${ret.data.audio_codec}</span>`);
-        }
-        if (ret.data.team) {
-          $(info_id).append(`<span class="badge badge-outline text-yellow me-1 mb-1" title="制作组/字幕组">${ret.data.team}</span>`);
-        }
-        if (ret.data.match_flag) {
-          $(flag_id).append(`<br><span class="badge badge-outline text-green me-1 mb-1">匹配</span>`);
-        } else {
-          $(flag_id).append(`<br><span class="badge badge-outline text-red me-1 mb-1">不匹配</span>`);
-        }
-        if (ret.data.exist_flag) {
-          $(flag_id).append(`<br><span class="badge badge-outline text-green me-1 mb-1">本地已存在</span>`);
-        } else {
-          $(flag_id).append(`<br><span class="badge badge-outline text-orange me-1 mb-1">本地不存在</span>`);
-        }
+        media_name_test_ui(ret.data, info_id);
       }
     })
   }
@@ -867,20 +775,21 @@
   function show_rss_history_modal(id) {
     show_wait_process();
     ajax_post("list_rss_history", { "id": id }, function (ret) {
+      let content;
       hide_wait_process();
       if (ret.code == 0) {
-        downloads = ret.data;
-        var content_th = `<thead><tr>
+        const downloads = ret.data;
+        let content_th = `<thead><tr>
                           <th>标题</th>
                           <th>下载器</th>
                           <th>下载时间</th>
                           </tr></thead>`;
-        var content_td = '';
-        for (var i = 0; i < downloads.length; i++) {
-          var download = downloads[i];
-          var title = '';
-          var downloader = '';
-          var date = '';
+        let content_td = '';
+        for (let i = 0; i < downloads.length; i++) {
+          const download = downloads[i];
+          let title = '';
+          let downloader = '';
+          let date = '';
           if (download.title) {
             title = `<span>${download.title}</span>`
           };
@@ -891,15 +800,14 @@
           if (download.downloader) {
             downloader = `<span class="badge me-1 mb-1" title="下载器">${download.downloader}</span>`;
           };
-          var content_td = `${content_td}<tr><td>${title}</td>><td>${downloader}</td><td class="text-nowrap">${date}</td></tr>`;
-          content_tb = `<tbody>${content_td}</tbody>`;
+          content_td = `${content_td}<tr><td>${title}</td>><td>${downloader}</td><td class="text-nowrap">${date}</td></tr>`;
+          let content_tb = `<tbody>${content_td}</tbody>`;
           content = `${content_th}${content_tb}`;
         };
       } else {
-        var content = `<div class="empty"><p class="empty-title">${ret.msg}</p></div>`;
-      };
-      $("#table-rss-history").empty();
-      $("#table-rss-history").append(content);
+        content= `<div class="empty"><p class="empty-title">${ret.msg}</p></div>`;
+      }
+      $("#table-rss-history").empty().append(content);
       $("#modal-rss-history").modal('show');
     });
   }
@@ -923,8 +831,7 @@
 
   // 单选框事件
   $('input[type=radio][name=userrss_uses]').change(function () {
-    var use = this.value;
-    show_userrss_uses(use);
+    show_userrss_uses(this.value);
   });
 
   // 自定义订阅动作 D:下载 R:订阅 S:搜索

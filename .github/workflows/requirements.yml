@@ -40,7 +40,7 @@ jobs:
         echo "title: requirements changed on {{ date | date('dddd, MMMM Do') }}" >> issue.md
         echo "---" >> issue.md 
         cat requirements.txt >> issue.md
-        cat issue.md 
+        cat issue.md
     - if: ${{ env.hash_re == 'changed' }}
       uses: JasonEtco/create-an-issue@v2
       env:

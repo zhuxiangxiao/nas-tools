@@ -44,7 +44,12 @@ class DbHelper:
                 POSTER=media_item.get_poster_image(),
                 TMDBID=media_item.tmdb_id,
                 OVERVIEW=media_item.overview,
-                RES_TYPE=media_item.get_resource_type_string(),
+                RES_TYPE=json.dumps({
+                    "respix": media_item.resource_pix,
+                    "restype": media_item.resource_type,
+                    "reseffect": media_item.resource_effect,
+                    "video_encode": media_item.video_encode
+                }),
                 RES_ORDER=media_item.res_order,
                 SIZE=StringUtils.str_filesize(int(media_item.size)),
                 SEEDERS=media_item.seeders,
@@ -154,7 +159,8 @@ class DbHelper:
                 TYPE=media.type.value,
                 RATING=media.vote_average,
                 IMAGE=media.get_poster_image(),
-                STATE=state
+                STATE=state,
+                ADD_TIME=time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
             )
         )
 
@@ -466,6 +472,25 @@ class DbHelper:
         self._db.query(CONFIGSITE).filter(CONFIGSITE.ID == int(tid)).update(
             {
                 "NOTE": note
+            }
+        )
+
+    @DbPersist(_db)
+    def update_site_cookie_ua(self, tid, cookie, ua):
+        """
+        更新站点Cookie和ua
+        """
+        if not tid:
+            return
+        rec = self._db.query(CONFIGSITE).filter(CONFIGSITE.ID == int(tid)).first()
+        if not rec.NOTE:
+            return
+        note = json.loads(rec.NOTE)
+        note['ua'] = ua
+        self._db.query(CONFIGSITE).filter(CONFIGSITE.ID == int(tid)).update(
+            {
+                "COOKIE": cookie,
+                "NOTE": json.dumps(note)
             }
         )
 
@@ -1045,7 +1070,6 @@ class DbHelper:
             leeching = site_user_info.leeching
             bonus = site_user_info.bonus
             url = site_user_info.site_url
-            favicon = site_user_info.site_favicon
             msg_unread = site_user_info.message_unread
             if not self.is_exists_site_user_statistics(url):
                 self._db.insert(SITEUSERINFOSTATS(
@@ -1062,7 +1086,6 @@ class DbHelper:
                     SEEDING_SIZE=seeding_size,
                     BONUS=bonus,
                     URL=url,
-                    FAVICON=favicon,
                     MSG_UNREAD=msg_unread
                 ))
             else:
@@ -1080,7 +1103,6 @@ class DbHelper:
                         "LEECHING": leeching,
                         "SEEDING_SIZE": seeding_size,
                         "BONUS": bonus,
-                        "FAVICON": favicon,
                         "MSG_UNREAD": msg_unread
                     }
                 )
@@ -1094,6 +1116,47 @@ class DbHelper:
             return True
         else:
             return False
+
+    @DbPersist(_db)
+    def update_site_favicon(self, site_user_infos: list):
+        """
+        更新站点图标数据
+        """
+        if not site_user_infos:
+            return
+        for site_user_info in site_user_infos:
+            if not self.is_exists_site_favicon(site_user_info.site_name):
+                self._db.insert(SITEFAVICON(
+                    SITE=site_user_info.site_name,
+                    URL=site_user_info.site_url,
+                    FAVICON=site_user_info.site_favicon
+                ))
+            else:
+                self._db.query(SITEFAVICON).filter(SITEFAVICON.SITE == site_user_info.site_name).update(
+                    {
+                        "URL": site_user_info.site_url,
+                        "FAVICON": site_user_info.site_favicon
+                    }
+                )
+
+    def is_exists_site_favicon(self, site):
+        """
+        判断站点图标是否存在
+        """
+        count = self._db.query(SITEFAVICON).filter(SITEFAVICON.SITE == site).count()
+        if count > 0:
+            return True
+        else:
+            return False
+
+    def get_site_favicons(self, site=None):
+        """
+        查询站点数据历史
+        """
+        if site:
+            return self._db.query(SITEFAVICON).filter(SITEFAVICON.SITE == site).all()
+        else:
+            return self._db.query(SITEFAVICON).all()
 
     @DbPersist(_db)
     def update_site_seed_info_site_name(self, new_name, old_name):
@@ -1830,7 +1893,8 @@ class DbHelper:
         """
         if not task_id:
             return []
-        return self._db.query(USERRSSTASKHISTORY).filter(USERRSSTASKHISTORY.TASK_ID == task_id).all()
+        return self._db.query(USERRSSTASKHISTORY).filter(USERRSSTASKHISTORY.TASK_ID == task_id)\
+            .order_by(USERRSSTASKHISTORY.DATE.desc()).all()
 
     def get_rss_history(self, rtype=None, rid=None):
         """
@@ -1928,14 +1992,17 @@ class DbHelper:
         查询自定义识别词
         """
         if wid:
-            return self._db.query(CUSTOMWORDS).filter(CUSTOMWORDS.ID == int(wid)).all()
+            return self._db.query(CUSTOMWORDS).filter(CUSTOMWORDS.ID == int(wid))\
+                .order_by(CUSTOMWORDS.GROUP_ID).all()
         elif gid:
-            return self._db.query(CUSTOMWORDS).filter(CUSTOMWORDS.GROUP_ID == int(gid)).all()
+            return self._db.query(CUSTOMWORDS).filter(CUSTOMWORDS.GROUP_ID == int(gid))\
+                .order_by(CUSTOMWORDS.GROUP_ID).all()
         elif wtype and enabled is not None and regex is not None:
             return self._db.query(CUSTOMWORDS).filter(CUSTOMWORDS.ENABLED == int(enabled),
                                                       CUSTOMWORDS.TYPE == int(wtype),
-                                                      CUSTOMWORDS.REGEX == int(regex)).all()
-        return self._db.query(CUSTOMWORDS).all()
+                                                      CUSTOMWORDS.REGEX == int(regex))\
+                .order_by(CUSTOMWORDS.GROUP_ID).all()
+        return self._db.query(CUSTOMWORDS).all().order_by(CUSTOMWORDS.GROUP_ID)
 
     def is_custom_words_existed(self, replaced=None, front=None, back=None):
         """
@@ -2159,7 +2226,7 @@ class DbHelper:
         ))
 
     @DbPersist(_db)
-    def check_message_client(self, cid=None, interactive=None, enabled=None):
+    def check_message_client(self, cid=None, interactive=None, enabled=None, ctype=None):
         """
         设置目录同步状态
         """
@@ -2175,9 +2242,68 @@ class DbHelper:
                     "ENABLED": int(enabled)
                 }
             )
-        elif not cid and int(interactive) == 0:
-            self._db.query(MESSAGECLIENT).filter(MESSAGECLIENT.INTERACTIVE == 1).update(
+        elif not cid and int(interactive) == 0 and ctype:
+            self._db.query(MESSAGECLIENT).filter(MESSAGECLIENT.INTERACTIVE == 1,
+                                                 MESSAGECLIENT.TYPE == ctype).update(
                 {
                     "INTERACTIVE": 0
                 }
             )
+
+    @DbPersist(_db)
+    def delete_torrent_remove_task(self, tid):
+        """
+        删除自动删种策略
+        """
+        if not tid:
+            return
+        self._db.query(TORRENTREMOVETASK).filter(TORRENTREMOVETASK.ID == int(tid)).delete()
+
+    def get_torrent_remove_tasks(self, tid=None):
+        """
+        查询自动删种策略
+        """
+        if tid:
+            return self._db.query(TORRENTREMOVETASK).filter(TORRENTREMOVETASK.ID == int(tid)).all()
+        return self._db.query(TORRENTREMOVETASK).order_by(TORRENTREMOVETASK.NAME).all()
+
+    @DbPersist(_db)
+    def insert_torrent_remove_task(self,
+                                   name,
+                                   action,
+                                   interval,
+                                   enabled,
+                                   samedata,
+                                   onlynastool,
+                                   downloader,
+                                   config: dict,
+                                   note=None):
+        """
+        设置自动删种策略
+        """
+        self._db.insert(TORRENTREMOVETASK(
+            NAME=name,
+            ACTION=int(action),
+            INTERVAL=int(interval),
+            ENABLED=int(enabled),
+            SAMEDATA=int(samedata),
+            ONLYNASTOOL=int(onlynastool),
+            DOWNLOADER=downloader,
+            CONFIG=json.dumps(config),
+            NOTE=note
+        ))
+
+    @DbPersist(_db)
+    def delete_douban_history(self, hid):
+        """
+        删除豆瓣同步记录
+        """
+        if not hid:
+            return
+        self._db.query(DOUBANMEDIAS).filter(DOUBANMEDIAS.ID == int(hid)).delete()
+
+    def get_douban_history(self):
+        """
+        查询豆瓣同步记录
+        """
+        return self._db.query(DOUBANMEDIAS).order_by(DOUBANMEDIAS.ADD_TIME.desc()).all()

@@ -1,12 +1,12 @@
 from abc import ABCMeta, abstractmethod
 
 
-class IMessageChannel(metaclass=ABCMeta):
+class IMessageClient(metaclass=ABCMeta):
 
     @abstractmethod
-    def get_status(self):
+    def init_config(self):
         """
-        检查连通性
+        初始化配置
         """
         pass
 

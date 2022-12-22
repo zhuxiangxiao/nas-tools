@@ -1,4 +1,20 @@
 meta_cases = [{
+    "title": "[秋叶原冥途战争][Akiba Maid Sensou][2022][WEB-DL][1080][TV Series][第01话][LeagueWEB]",
+    "subtitle": "",
+    "target": {
+        "type": "电视剧",
+        "cn_name": "",
+        "en_name": "Akiba Maid Sensou",
+        "year": "2022",
+        "part": "",
+        "season": "S01",
+        "episode": "E01",
+        "restype": "",
+        "pix": "1080p",
+        "video_codec": "",
+        "audio_codec": ""
+    }
+}, {
     "title": "哆啦A梦：大雄的宇宙小战争 2021 (2022) - 1080p.mp4",
     "subtitle": "",
     "target": {
@@ -47,35 +63,35 @@ meta_cases = [{
         "audio_codec": "AAC 2.0"
     }
 }, {
-    "title": "Qi Refining for 3000 Years S01E06 2022 1080p B-Blobal WEB-DL x264 AAC-AnimeS@AdWeb",
+    "title": "Qi Refining for 3000 Years S01E06 2022 1080p B-Blobal WEB-DL X264 AAC-AnimeS@AdWeb",
     "subtitle": "",
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Qi Refining for 3000 Years",
+        "en_name": "Qi Refining For 3000 Years",
         "year": "2022",
         "part": "",
         "season": "S01",
         "episode": "E06",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "AAC"
     }
 }, {
-    "title": "Noumin Kanren no Skill Bakka Agetetara Naze ka Tsuyoku Natta S01E02 2022 1080p B-Global WEB-DL x264 AAC-AnimeS@ADWeb[2022年10月新番]",
+    "title": "Noumin Kanren no Skill Bakka Agetetara Naze ka Tsuyoku Natta S01E02 2022 1080p B-Global WEB-DL X264 AAC-AnimeS@ADWeb[2022年10月新番]",
     "subtitle": "",
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Noumin Kanren no Skill Bakka Agetetara Naze ka Tsuyoku Natta",
+        "en_name": "Noumin Kanren No Skill Bakka Agetetara Naze Ka Tsuyoku Natta",
         "year": "2022",
         "part": "",
         "season": "S01",
         "episode": "E02",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "AAC"
     }
 }, {
@@ -84,7 +100,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "dou luo da lu",
+        "en_name": "Dou Luo Da Lu",
         "year": "2018",
         "part": "",
         "season": "S01",
@@ -100,7 +116,7 @@ meta_cases = [{
     "target": {
         "type": "电影",
         "cn_name": "",
-        "en_name": "Thor Love and Thunder",
+        "en_name": "Thor Love And Thunder",
         "year": "2022",
         "part": "",
         "season": "",
@@ -116,7 +132,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Youkoso Jitsuryoku Shijou Shugi no Kyoushitsu e",
+        "en_name": "Youkoso Jitsuryoku Shijou Shugi No Kyoushitsu E",
         "year": "",
         "part": "",
         "season": "S02",
@@ -159,7 +175,7 @@ meta_cases = [{
         "audio_codec": "AC3"
     }
 }, {
-    "title": "Wonder Woman 1984 2020 BluRay 1080p Atmos TrueHD 7.1 x264-EPiC",
+    "title": "Wonder Woman 1984 2020 BluRay 1080p Atmos TrueHD 7.1 X264-EPiC",
     "subtitle": "",
     "target": {
         "type": "电影",
@@ -171,7 +187,7 @@ meta_cases = [{
         "episode": "",
         "restype": "BluRay",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "Atmos TrueHD 7.1"
     }
 }, {
@@ -185,7 +201,7 @@ meta_cases = [{
         "part": "",
         "season": "S04",
         "episode": "E03",
-        "restype": "",
+        "restype": "WEB-DL",
         "pix": "1080p",
         "video_codec": "",
         "audio_codec": ""
@@ -212,7 +228,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Soredemo Ayumu wa Yosetekuru",
+        "en_name": "Soredemo Ayumu Wa Yosetekuru",
         "year": "",
         "part": "",
         "season": "S01",
@@ -228,7 +244,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "不死者之王",
-        "en_name": "OVERLORD Ⅳ",
+        "en_name": "Overlord Ⅳ",
         "year": "",
         "part": "",
         "season": "S04",
@@ -260,7 +276,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "组长女儿与保姆",
-        "en_name": "Kumichou Musume to Sewagakari",
+        "en_name": "Kumichou Musume To Sewagakari",
         "year": "",
         "part": "",
         "season": "S01",
@@ -276,18 +292,18 @@ meta_cases = [{
     "target": {
         "type": "电影",
         "cn_name": "",
-        "en_name": "Nande Koko ni Sensei ga!?",
+        "en_name": "Nande Koko Ni Sensei Ga!?",
         "year": "2019",
         "part": "",
         "season": "",
         "episode": "",
-        "restype": "BluRay",
+        "restype": "BluRay Remux",
         "pix": "1080p",
         "video_codec": "AVC",
         "audio_codec": "LPCM 7³"
     }
 }, {
-    "title": "30.Rock.S02E01.1080p.BluRay.x264-BORDURE.mkv",
+    "title": "30.Rock.S02E01.1080p.BluRay.X264-BORDURE.mkv",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -299,7 +315,7 @@ meta_cases = [{
         "episode": "E01",
         "restype": "BluRay",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": ""
     }
 }, {
@@ -308,7 +324,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Gal to Kyouryuu",
+        "en_name": "Gal To Kyouryuu",
         "year": "",
         "part": "",
         "season": "S01",
@@ -356,7 +372,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Throne of Seal",
+        "en_name": "Throne Of Seal",
         "year": "2022",
         "part": "",
         "season": "S01",
@@ -404,7 +420,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "OVERLORD",
+        "en_name": "Overlord",
         "year": "",
         "part": "",
         "season": "S04",
@@ -420,7 +436,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Made in Abyss",
+        "en_name": "Made In Abyss",
         "year": "",
         "part": "",
         "season": "S02",
@@ -447,7 +463,7 @@ meta_cases = [{
         "audio_codec": ""
     }
 }, {
-    "title": "Ousama Ranking S01E02-[1080p][BDRIP][x265.FLAC].mkv",
+    "title": "Ousama Ranking S01E02-[1080p][BDRIP][X265.FLAC].mkv",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -459,7 +475,7 @@ meta_cases = [{
         "episode": "E02",
         "restype": "BDRIP",
         "pix": "1080p",
-        "video_codec": "x265",
+        "video_codec": "X265",
         "audio_codec": "FLAC"
     }
 }, {
@@ -468,7 +484,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Soredemo Ayumu wa Yosetekuru",
+        "en_name": "Soredemo Ayumu Wa Yosetekuru",
         "year": "",
         "part": "",
         "season": "S01",
@@ -484,7 +500,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Kinsou no Vermeil",
+        "en_name": "Kinsou No Vermeil",
         "year": "",
         "part": "",
         "season": "S01",
@@ -495,19 +511,19 @@ meta_cases = [{
         "audio_codec": "AAC"
     }
 }, {
-    "title": "Hataraku.Maou-sama.S02E05.2022.1080p.CR.WEB-DL.x264.AAC-ADWeb.mkv",
+    "title": "Hataraku.Maou-sama.S02E05.2022.1080p.CR.WEB-DL.X264.AAC-ADWeb.mkv",
     "subtitle": "",
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Hataraku Maou sama",
+        "en_name": "Hataraku Maou Sama",
         "year": "2022",
         "part": "",
         "season": "S02",
         "episode": "E05",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "AAC"
     }
 }, {
@@ -564,7 +580,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Stand up Comedy",
+        "en_name": "Stand Up Comedy",
         "year": "2022",
         "part": "PartA",
         "season": "S01",
@@ -580,7 +596,7 @@ meta_cases = [{
     "target": {
         "type": "电影",
         "cn_name": "教父3",
-        "en_name": "The Godfather Part III",
+        "en_name": "The Godfather Part Iii",
         "year": "1990",
         "part": "",
         "season": "",
@@ -591,23 +607,23 @@ meta_cases = [{
         "audio_codec": "DDP 5.1"
     }
 }, {
-    "title": "A.Quiet.Place.Part.II.2020.1080p.UHD.BluRay.DD+7.1.DoVi.x265-PuTao",
+    "title": "A.Quiet.Place.Part.II.2020.1080p.UHD.BluRay.DD+7.1.DoVi.X265-PuTao",
     "subtitle": "",
     "target": {
         "type": "电影",
         "cn_name": "",
-        "en_name": "A Quiet Place Part II",
+        "en_name": "A Quiet Place Part Ii",
         "year": "2020",
         "part": "",
         "season": "",
         "episode": "",
-        "restype": "UHD",
+        "restype": "BluRay DoVi UHD",
         "pix": "1080p",
-        "video_codec": "x265",
+        "video_codec": "X265",
         "audio_codec": "DD 7.1"
     }
 }, {
-    "title": "Childhood.In.A.Capsule.S01E16.2022.1080p.KKTV.WEB-DL.x264.AAC-ADWeb.mkv",
+    "title": "Childhood.In.A.Capsule.S01E16.2022.1080p.KKTV.WEB-DL.X264.AAC-ADWeb.mkv",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -619,7 +635,7 @@ meta_cases = [{
         "episode": "E16",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "AAC"
     }
 }, {
@@ -660,7 +676,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "Hataraku Maou-sama!!",
+        "en_name": "Hataraku Maou-Sama!!",
         "year": "",
         "part": "",
         "season": "S02",
@@ -687,7 +703,7 @@ meta_cases = [{
         "audio_codec": "AAC 5.1"
     }
 }, {
-    "title": "The 355 2022 BluRay 1080p DTS-HD MA5.1 x265.10bit-BeiTai",
+    "title": "The 355 2022 BluRay 1080p DTS-HD MA5.1 X265.10bit-BeiTai",
     "subtitle": "",
     "target": {
         "type": "电影",
@@ -699,11 +715,11 @@ meta_cases = [{
         "episode": "",
         "restype": "BluRay",
         "pix": "1080p",
-        "video_codec": "x265",
+        "video_codec": "X265 10bit",
         "audio_codec": "DTS-HD MA 5.1"
     }
 }, {
-    "title": "Sense8 s01-s02 2015-2017 1080P WEB-DL x265 AC3￡cXcY@FRDS",
+    "title": "Sense8 s01-s02 2015-2017 1080P WEB-DL X265 AC3￡cXcY@FRDS",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -715,7 +731,7 @@ meta_cases = [{
         "episode": "",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x265",
+        "video_codec": "X265",
         "audio_codec": ""
     }
 }, {
@@ -724,7 +740,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "The Heart of Genius",
+        "en_name": "The Heart Of Genius",
         "year": "2022",
         "part": "",
         "season": "S01",
@@ -740,7 +756,7 @@ meta_cases = [{
     "target": {
         "type": "电视剧",
         "cn_name": "",
-        "en_name": "The Heart of Genius",
+        "en_name": "The Heart Of Genius",
         "year": "2022",
         "part": "",
         "season": "S01",
@@ -751,7 +767,7 @@ meta_cases = [{
         "audio_codec": "AAC"
     }
 }, {
-    "title": "2022.8.2.Twelve.Monkeys.1995.GBR.4K.REMASTERED.BluRay.1080p.x264.DTS [3.4 GB]",
+    "title": "2022.8.2.Twelve.Monkeys.1995.GBR.4K.REMASTERED.BluRay.1080p.X264.DTS [3.4 GB]",
     "subtitle": "",
     "target": {
         "type": "电影",
@@ -763,7 +779,7 @@ meta_cases = [{
         "episode": "",
         "restype": "BluRay",
         "pix": "4k",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": "DTS"
     }
 }, {
@@ -783,7 +799,7 @@ meta_cases = [{
         "audio_codec": "AAC"
     }
 }, {
-    "title": "Sense8 S2E1 2015-2017 1080P WEB-DL x265 AC3￡cXcY@FRDS",
+    "title": "Sense8 S2E1 2015-2017 1080P WEB-DL X265 AC3￡cXcY@FRDS",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -795,7 +811,7 @@ meta_cases = [{
         "episode": "E01",
         "restype": "WEB-DL",
         "pix": "1080p",
-        "video_codec": "x265",
+        "video_codec": "X265",
         "audio_codec": ""
     }
 }, {
@@ -815,7 +831,7 @@ meta_cases = [{
         "audio_codec": "flac"
     }
 }, {
-    "title": "[云歌字幕组][7月新番][欢迎来到实力至上主义的教室 第二季][01][x264 10bit][1080p][简体中文].mp4",
+    "title": "[云歌字幕组][7月新番][欢迎来到实力至上主义的教室 第二季][01][X264 10bit][1080p][简体中文].mp4",
     "subtitle": "",
     "target": {
         "type": "电视剧",
@@ -827,7 +843,7 @@ meta_cases = [{
         "episode": "E01",
         "restype": "",
         "pix": "1080p",
-        "video_codec": "x264",
+        "video_codec": "X264",
         "audio_codec": ""
     }
 }, {
@@ -845,5 +861,37 @@ meta_cases = [{
         "pix": "",
         "video_codec": "",
         "audio_codec": ""
+    }
+}, {
+    "title": "Rick and Morty.S06E06.JuRicksic.Mort.1080p.HMAX.WEBRip.DD5.1.X264-NTb[rartv]",
+    "subtitle": "",
+    "target": {
+        "type": "电视剧",
+        "cn_name": "",
+        "en_name": "Rick And Morty",
+        "year": "",
+        "part": "",
+        "season": "S06",
+        "episode": "E06",
+        "restype": "WEBRip",
+        "pix": "1080p",
+        "video_codec": "X264",
+        "audio_codec": "DD 5.1"
+    }
+}, {
+    "title": "rick and Morty.S06E05.JuRicksic.Mort.1080p.HMAX.WEBRip.DD5.1.X264-NTb[rartv]",
+    "subtitle": "",
+    "target": {
+        "type": "电视剧",
+        "cn_name": "",
+        "en_name": "Rick And Morty",
+        "year": "",
+        "part": "",
+        "season": "S06",
+        "episode": "E05",
+        "restype": "WEBRip",
+        "pix": "1080p",
+        "video_codec": "X264",
+        "audio_codec": "DD 5.1"
     }
 }]

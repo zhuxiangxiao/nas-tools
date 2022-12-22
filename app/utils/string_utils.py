@@ -1,13 +1,13 @@
 import bisect
-import datetime
 import random
 import re
-import time
 from urllib import parse
 
+import cn2an
+import dateutil.parser
 from delorean import parse as delorean_parse
 
-import cn2an
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import MediaType
 
 
@@ -27,7 +27,7 @@ class StringUtils:
         try:
             size = float(size)
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return 0
         if text.find("PB") != -1 or text.find("PIB") != -1:
             size *= 1024 ** 5
@@ -50,7 +50,7 @@ class StringUtils:
             try:
                 time_sec = float(time_sec)
             except Exception as e:
-                print(str(e))
+                ExceptionUtils.exception_traceback(e)
                 return ""
         d = [(0, '秒'), (60 - 1, '分'), (3600 - 1, '小时'), (86400 - 1, '天')]
         s = [x[0] for x in d]
@@ -127,7 +127,7 @@ class StringUtils:
         try:
             int_val = int(text.strip().replace(',', ''))
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
 
         return int_val
 
@@ -142,7 +142,7 @@ class StringUtils:
         try:
             float_val = float(text.strip().replace(',', ''))
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
         return float_val
 
     @staticmethod
@@ -170,7 +170,7 @@ class StringUtils:
             try:
                 size = float(size)
             except Exception as e:
-                print(str(e))
+                ExceptionUtils.exception_traceback(e)
                 return ""
         d = [(1024 - 1, 'K'), (1024 ** 2 - 1, 'M'), (1024 ** 3 - 1, 'G'), (1024 ** 4 - 1, 'T')]
         s = [x[0] for x in d]
@@ -207,6 +207,16 @@ class StringUtils:
             return "http", url
         addr = parse.urlparse(url)
         return addr.scheme, addr.netloc
+
+    @staticmethod
+    def get_url_domain(url):
+        """
+        获取URL的域名部分，不含WWW和HTTP
+        """
+        _, netloc = StringUtils.get_url_netloc(url)
+        if netloc:
+            return netloc.lower().replace("www.", "")
+        return ""
 
     @staticmethod
     def get_base_url(url):
@@ -278,14 +288,9 @@ class StringUtils:
     def get_time_stamp(date):
         tempsTime = None
         try:
-            result = re.search(r"[\-+]\d+", date)
-            if result:
-                time_area = result.group()
-                utcdatetime = time.strptime(date, '%a, %d %b %Y %H:%M:%S ' + time_area)
-                tempsTime = time.mktime(utcdatetime)
-                tempsTime = datetime.datetime.fromtimestamp(tempsTime)
+            tempsTime = dateutil.parser.parse(date)
         except Exception as err:
-            print(str(err))
+            ExceptionUtils.exception_traceback(err)
         return tempsTime
 
     @staticmethod
@@ -302,7 +307,7 @@ class StringUtils:
         try:
             return delorean_parse(datetime_str, dayfirst=False).format_datetime('yyyy-MM-dd HH:mm:ss')
         except Exception as e:
-            print(e)
+            ExceptionUtils.exception_traceback(e)
             return datetime_str
 
     @staticmethod
@@ -349,3 +354,12 @@ class StringUtils:
                 id_list.append(dic.get('id'))
                 content = content.replace(dic.get('name'), '')
         return id_list, re.sub(r'\s+', ' ', content).strip()
+
+    @staticmethod
+    def str_title(s):
+        """
+        讲英文的首字母大写
+        :param s: en_name string
+        :return: string title
+        """
+        return s.title() if s else s

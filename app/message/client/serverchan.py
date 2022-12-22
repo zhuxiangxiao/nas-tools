@@ -1,11 +1,11 @@
 from urllib.parse import urlencode
 
-import log
-from app.message.channel.channel import IMessageChannel
+from app.message.message_client import IMessageClient
 from app.utils import RequestUtils
+from app.utils.exception_utils import ExceptionUtils
 
 
-class ServerChan(IMessageChannel):
+class ServerChan(IMessageClient):
     _sckey = None
     _client_config = {}
 
@@ -16,15 +16,6 @@ class ServerChan(IMessageChannel):
     def init_config(self):
         if self._client_config:
             self._sckey = self._client_config.get('sckey')
-
-    def get_status(self):
-        """
-        测试连通性
-        """
-        flag, msg = self.send_msg("测试", "这是一条测试消息")
-        if not flag:
-            log.error("【ServerChan】发送消息失败：%s" % msg)
-        return flag
 
     def send_msg(self, title, text="", image="", url="", user_id=""):
         """
@@ -53,6 +44,7 @@ class ServerChan(IMessageChannel):
             else:
                 return False, "未获取到返回信息"
         except Exception as msg_e:
+            ExceptionUtils.exception_traceback(msg_e)
             return False, str(msg_e)
 
     def send_list_msg(self, **kwargs):

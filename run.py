@@ -1,8 +1,17 @@
 import os
+import shutil
 import signal
 import sys
+import time
 import warnings
-from pyvirtualdisplay import Display
+
+from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
+from app.utils.cache_manager import ConfigLoadCache
+from app.utils.exception_utils import ExceptionUtils
+
+warnings.filterwarnings('ignore')
 
 # 添加第三方库入口
 with open(os.path.join(os.path.dirname(__file__),
@@ -18,7 +27,7 @@ is_windows_exe = getattr(sys, 'frozen', False) and (os.name == "nt")
 if is_windows_exe:
     # 托盘相关库
     import threading
-    from windows.trayicon import trayicon
+    from windows.trayicon import TrayIcon, NullWriter
 
     # 初始化环境变量
     os.environ["NASTOOL_CONFIG"] = os.path.join(os.path.dirname(sys.executable),
@@ -39,49 +48,51 @@ if is_windows_exe:
         if not os.path.exists(feapder_tmpdir):
             os.makedirs(feapder_tmpdir)
     except Exception as err:
-        print(str(err))
-
-# 启动虚拟显示
-is_docker = os.path.exists('/.dockerenv')
-if is_docker:
-    try:
-        display = Display(visible=False, size=(1920, 1080))
-        display.start()
-        os.environ['NASTOOL_DISPLAY'] = 'YES'
-    except Exception as err:
-        print(str(err))
+        ExceptionUtils.exception_traceback(err)
 else:
-    display = None
+    # 第三方代码打补丁
+    shutil.copy2(os.path.join(os.path.dirname(__file__),
+                              "third_party",
+                              "_selenium.py"),
+                 os.path.join(os.path.dirname(__file__),
+                              "third_party",
+                              "feapder",
+                              "feapder",
+                              "network",
+                              "downloader",
+                              "_selenium.py"))
 
-from config import CONFIG
+from config import Config
 import log
 from web.main import App
 from app.brushtask import BrushTask
 from app.db import init_db, update_db
-from app.helper import IndexerHelper
+from app.helper import IndexerHelper, DisplayHelper, ChromeHelper
 from app.rsschecker import RssChecker
-from app.scheduler import run_scheduler
-from app.sync import run_monitor
+from app.scheduler import run_scheduler, restart_scheduler
+from app.sync import run_monitor, restart_monitor
+from app.torrentremover import TorrentRemover
+from app.utils import SystemUtils
+from app.utils.commons import INSTANCES
 from check_config import update_config, check_config
 from version import APP_VERSION
-
-warnings.filterwarnings('ignore')
 
 
 def sigal_handler(num, stack):
     """
     信号处理
     """
-    if is_docker:
+    if SystemUtils.is_docker():
         log.warn('捕捉到退出信号：%s，开始退出...' % num)
         # 停止虚拟显示
-        if display:
-            display.stop()
+        DisplayHelper().quit()
+        # 停止Chrome
+        ChromeHelper().quit()
         # 退出主进程
         sys.exit()
 
 
-def get_run_config(cfg):
+def get_run_config():
     """
     获取运行配置
     """
@@ -90,7 +101,7 @@ def get_run_config(cfg):
     _ssl_cert = None
     _ssl_key = None
 
-    app_conf = cfg.get_config('app')
+    app_conf = Config().get_config('app')
     if app_conf:
         if app_conf.get("web_host"):
             _web_host = app_conf.get("web_host").replace('[', '').replace(']', '')
@@ -109,7 +120,6 @@ signal.signal(signal.SIGINT, sigal_handler)
 signal.signal(signal.SIGTERM, sigal_handler)
 
 
-# 初始化
 def init_system():
     # 配置
     log.console('NAStool 当前版本号：%s' % APP_VERSION)
@@ -123,9 +133,10 @@ def init_system():
     check_config()
 
 
-# 启动附属服务
 def start_service():
-    log.console("开始启动进程...")
+    log.console("开始启动服务...")
+    # 启动虚拟显示
+    DisplayHelper()
     # 启动定时服务
     run_scheduler()
     # 启动监控服务
@@ -134,8 +145,46 @@ def start_service():
     BrushTask()
     # 启动自定义订阅服务
     RssChecker()
+    # 启动自动删种服务
+    TorrentRemover()
     # 加载索引器配置
     IndexerHelper()
+
+
+def monitor_config():
+    class _ConfigHandler(FileSystemEventHandler):
+        """
+        配置文件变化响应
+        """
+
+        def __init__(self):
+            FileSystemEventHandler.__init__(self)
+
+        def on_modified(self, event):
+            if not event.is_directory \
+                    and os.path.basename(event.src_path) == "config.yaml":
+                # 10秒内只能加载一次
+                if ConfigLoadCache.get(event.src_path):
+                    return
+                ConfigLoadCache.set(event.src_path, True)
+                log.console("进程 %s 检测到配置文件已修改，正在重新加载..." % os.getpid())
+                time.sleep(1)
+                # 重新加载配置
+                Config().init_config()
+                # 重载singleton服务
+                for instance in INSTANCES.values():
+                    if hasattr(instance, "init_config"):
+                        instance.init_config()
+                # 重启定时服务
+                restart_scheduler()
+                # 重启监控服务
+                restart_monitor()
+
+    # 配置文件监听
+    _observer = Observer(timeout=10)
+    _observer.schedule(_ConfigHandler(), path=Config().get_config_path(), recursive=False)
+    _observer.daemon = True
+    _observer.start()
 
 
 # 系统初始化
@@ -144,19 +193,24 @@ init_system()
 # 启动服务
 start_service()
 
+# 监听配置文件变化
+monitor_config()
 
 # 本地运行
 if __name__ == '__main__':
     # Windows启动托盘
     if is_windows_exe:
-        homepage = CONFIG.get_config('app').get('domain')
+        homepage = Config().get_config('app').get('domain')
         if not homepage:
-            homepage = "http://localhost:%s" % str(CONFIG.get_config('app').get('web_port'))
+            homepage = "http://localhost:%s" % str(Config().get_config('app').get('web_port'))
         log_path = os.environ.get("NASTOOL_LOG")
+
+        sys.stdout = NullWriter()
+        sys.stderr = NullWriter()
 
 
         def traystart():
-            trayicon(homepage, log_path)
+            TrayIcon(homepage, log_path)
 
 
         if len(os.popen("tasklist| findstr %s" % os.path.basename(sys.executable), 'r').read().splitlines()) <= 2:
@@ -164,4 +218,4 @@ if __name__ == '__main__':
             p1.start()
 
     # gunicorn 启动
-    App.run(**get_run_config(CONFIG))
+    App.run(**get_run_config())

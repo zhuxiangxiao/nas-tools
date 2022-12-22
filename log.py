@@ -1,12 +1,13 @@
 import logging
 import os
+import re
 import threading
 import time
 from collections import deque
 from html import escape
 from logging.handlers import RotatingFileHandler
 
-from config import CONFIG
+from config import Config
 
 logging.getLogger('werkzeug').setLevel(logging.ERROR)
 lock = threading.Lock()
@@ -27,7 +28,7 @@ class Logger:
 
     def __init__(self, module):
         self.logger = logging.getLogger(module)
-        self.__config = CONFIG
+        self.__config = Config()
         logtype = self.__config.get_config('app').get('logtype') or "console"
         loglevel = self.__config.get_config('app').get('loglevel') or "info"
         self.logger.setLevel(level=self.__loglevels.get(loglevel))
@@ -74,7 +75,17 @@ class Logger:
 def __append_log_queue(level, text):
     global LOG_INDEX, LOG_QUEUE
     with lock:
-        LOG_QUEUE.append(f"{time.strftime('%H:%M:%S', time.localtime(time.time()))} {level} - {escape(text)}")
+        text = escape(text)
+        if text.startswith("【"):
+            source = re.findall(r"(?<=【).*?(?=】)", text)[0]
+            text = text.replace(f"【{source}】", "")
+        else:
+            source = "System"
+        LOG_QUEUE.append({
+            "time": time.strftime('%H:%M:%S', time.localtime(time.time())),
+            "level": level,
+            "source": source,
+            "text": text})
         LOG_INDEX += 1
 
 

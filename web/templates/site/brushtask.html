@@ -63,7 +63,14 @@
         {% for Task in Tasks %}
           <div class="card">
             <div class="card-header">
-              <h3 class="card-title">{{ Task.name }}</h3>
+              {% if Task.state == 'Y' %}
+              <span class="badge bg-green"></span>
+              {% else %}
+              <span class="badge bg-red"></span>
+              {% endif %}
+              <div class="ms-2">
+                <h3 class="card-title">{{ Task.name }}</h3>
+              </div>
               <div class="ms-2">
                 <a href="javascript:run_brushtask_now('{{ Task.id }}')" class="btn-icon" title="立即运行任务"
                    data-bs-toggle="tooltip">
@@ -76,7 +83,16 @@
                   </svg>
                 </a>
               </div>
+              <div class="text-muted ms-3" id="detail_size_{{ Task.id }}"
+                style="display: {% if Count > 2 %}block{% else %}none{% endif %};">↑{{ Task.upload_size }}  ↓{{ Task.download_size }}</div>
               <div class="card-actions btn-actions">
+                <a href="javascript:show_brushtask_detail('{{ Task.id }}')" class="btn-action">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="icon ms-1" width="20" height="20" fill="currentColor"
+                    viewBox="0 0 16 16">
+                    <path fill-rule="evenodd"
+                      d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z" />
+                  </svg>
+                </a>
                 <a href="javascript:edit_brushtask_modal('{{ Task.id }}')" class="btn-action" title="编辑任务">
                   <svg xmlns="http://www.w3.org/2000/svg" class="icon ms-1" width="24" height="24" viewBox="0 0 24 24"
                        stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round"
@@ -100,14 +116,14 @@
                 </a>
               </div>
             </div>
-            <div class="card-body">
+            <div class="card-body" id="detail_{{ Task.id }}"
+                style="display: {% if Count > 2 %}none{% else %}block{% endif %};">
               <div class="datagrid">
                 <div class="datagrid-item">
                   <div class="datagrid-title">站点</div>
                   <div class="datagrid-content">
                     <div class="d-flex align-items-center">
-                      <img class="avatar-sm me-2" src="{{ Task.site_url }}/favicon.ico" width="24" height="24" alt=""
-                           onerror="this.src='../static/img/pt.jpg'" style="cursor:pointer"/>
+                      <span class="avatar avatar-sm rounded me-2 siteicon-{{ Task.site|hash }}" width="24" height="24" alt="" style="cursor:pointer"></span>
                       <h3>{{ Task.site }}</h3>
                     </div>
                   </div>
@@ -239,7 +255,7 @@
 {% endif %}
 <div class="modal modal-blur fade" id="modal-brushtask" tabindex="-1" role="dialog" aria-hidden="true"
      data-bs-backdrop="static" data-bs-keyboard="false">
-  <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="brushtask_modal_title">新建任务</h5>
@@ -337,9 +353,7 @@
             </div>
           </div>
         </div>
-      </div>
-      <div class="hr-text hr-text-center hr-text-spaceless">选种规则</div>
-      <div class="modal-body">
+        <div class="hr-text hr-text-center hr-text-spaceless mt-1 mb-3">选种规则</div>
         <div class="row">
           <div class="col-lg-4">
             <div class="mb-3">
@@ -492,9 +506,7 @@
             </div>
           </div>
         </div>
-      </div>
-      <div class="hr-text hr-text-center hr-text-spaceless">删种规则</div>
-      <div class="modal-body">
+        <div class="hr-text hr-text-center hr-text-spaceless mt-1 mb-3">删种规则</div>
         <div class="row">
           <div class="col-lg-4">
             <div class="mb-3">
@@ -641,6 +653,12 @@
     $("#modal-brushtask").modal('show');
   }
 
+  // 折叠任务详情
+  function show_brushtask_detail(taskid) {
+    $(`#detail_${taskid}`).slideToggle();
+    $(`#detail_size_${taskid}`).slideToggle();
+  }
+
   // 显示编辑刷流任务
   function edit_brushtask_modal(brushid) {
     $("#brushtask_id").val(brushid);
@@ -676,48 +694,48 @@
         $("#brushtask_exclude").val(ret.task.rss_rule.exclude);
         //种子大小
         if (ret.task.rss_rule.size) {
-          size_str = ret.task.rss_rule.size.split('#');
+          let size_str = ret.task.rss_rule.size.split('#');
           filter_item_change(size_str[0], 'brushtask_torrent_size', $('#brushtask_torrent_size_do_' + size_str[0]), size_str[1])
         }
         //种子大小
         if (ret.task.rss_rule.peercount) {
-          peercount_str = ret.task.rss_rule.peercount;
+          let peercount_str = ret.task.rss_rule.peercount;
           if (peercount_str === '') {
             peercount_str = '#';
           } else if (peercount_str.indexOf('#') === -1) {
             peercount_str = 'lt#' + peercount_str;
           }
-          peercount_strs = peercount_str.split('#');
+          let peercount_strs = peercount_str.split('#');
           filter_item_change(peercount_strs[0], 'brushtask_peercount', $('#brushtask_peercount_do_' + peercount_strs[0]), peercount_strs[1])
         }
         //做种时间
         if (ret.task.remove_rule.time) {
-          seedtime_str = ret.task.remove_rule.time.split('#');
+          let seedtime_str = ret.task.remove_rule.time.split('#');
           filter_item_change(seedtime_str[0], 'brushtask_seedtime', $('#brushtask_seedtime_do_' + seedtime_str[0]), seedtime_str[1])
         }
         //做种大小
         if (ret.task.remove_rule.uploadsize) {
-          seedsize_str = ret.task.remove_rule.uploadsize.split('#');
+          let seedsize_str = ret.task.remove_rule.uploadsize.split('#');
           filter_item_change(seedsize_str[0], 'brushtask_seedsize', $('#brushtask_seedsize_do_' + seedsize_str[0]), seedsize_str[1])
         }
         //分享率
         if (ret.task.remove_rule.ratio) {
-          seedratio_str = ret.task.remove_rule.ratio.split('#');
+          let seedratio_str = ret.task.remove_rule.ratio.split('#');
           filter_item_change(seedratio_str[0], 'brushtask_seedratio', $('#brushtask_seedratio_do_' + seedratio_str[0]), seedratio_str[1])
         }
         //下载耗时
         if (ret.task.remove_rule.dltime) {
-          dltime_str = ret.task.remove_rule.dltime.split('#');
+          let dltime_str = ret.task.remove_rule.dltime.split('#');
           filter_item_change(dltime_str[0], 'brushtask_dltime', $('#brushtask_dltime_do_' + dltime_str[0]), dltime_str[1])
         }
         //平均上传速度
         if (ret.task.remove_rule.avg_upspeed) {
-          avg_upspeed_str = ret.task.remove_rule.avg_upspeed.split('#');
+          let avg_upspeed_str = ret.task.remove_rule.avg_upspeed.split('#');
           filter_item_change(avg_upspeed_str[0], 'brushtask_avg_upspeed', $('#brushtask_avg_upspeed_do_' + avg_upspeed_str[0]), avg_upspeed_str[1])
         }
         //发布日期
         if (ret.task.rss_rule.pubdate) {
-          pubdate_str = ret.task.rss_rule.pubdate.split('#');
+          let pubdate_str = ret.task.rss_rule.pubdate.split('#');
           filter_item_change(pubdate_str[0], 'brushtask_pubdate', $('#brushtask_pubdate_do_' + pubdate_str[0]), pubdate_str[1])
         }
         //上传限速
@@ -746,8 +764,7 @@
       return;
     }
     ajax_post("get_site", {"id": site_id}, function (ret) {
-      $("#brushtask_free").empty();
-      $("#brushtask_free").append('<option value="" selected>全部</option>');
+      $("#brushtask_free").empty().append('<option value="" selected>全部</option>');
       if (ret.site_free) {
         $("#brushtask_free").append('<option value="FREE">免费</option>');
       }
@@ -757,8 +774,7 @@
       if (free_value) {
         $("#brushtask_free").val(free_value);
       }
-      $("#brushtask_hr").empty();
-      $("#brushtask_hr").append('<option value="" selected>全部</option>');
+      $("#brushtask_hr").empty().append('<option value="" selected>全部</option>');
       if (ret.site_hr) {
         $("#brushtask_hr").append('<option value="HR">排除HR</option>');
       }
@@ -770,10 +786,9 @@
 
   // 范围条件
   function filter_item_change(type, id, item, value) {
-    console.log(type, id, item, value)
-    input_obj = $("#" + id);
-    button_obj = $("#" + id + "_btn");
-    do_obj = $("#" + id + "_do");
+    let input_obj = $("#" + id);
+    let button_obj = $("#" + id + "_btn");
+    let do_obj = $("#" + id + "_do");
     if (!type) {
       input_obj.val("");
       do_obj.val("");
@@ -791,49 +806,49 @@
   // 新增任务保存
   function add_brushtask_job() {
     // 检查输入项
-    var brushtask_id = $("#brushtask_id").val();
-    var brushtask_name = $("#brushtask_name").val();
+    let brushtask_id = $("#brushtask_id").val();
+    let brushtask_name = $("#brushtask_name").val();
     if (!brushtask_name) {
       $("#brushtask_name").addClass("is-invalid");
       return;
     } else {
       $("#brushtask_name").removeClass("is-invalid");
     }
-    var brushtask_site = $("#brushtask_site").val();
+    let brushtask_site = $("#brushtask_site").val();
     if (!brushtask_site) {
       $("#brushtask_site").addClass("is-invalid");
       return;
     } else {
       $("#brushtask_site").removeClass("is-invalid");
     }
-    var brushtask_interval = $("#brushtask_interval").val();
+    let brushtask_interval = $("#brushtask_interval").val();
     if (!brushtask_interval || isNaN(brushtask_interval)) {
       $("#brushtask_interval").addClass("is-invalid");
       return;
     } else {
       $("#brushtask_interval").removeClass("is-invalid");
     }
-    var brushtask_downloader = $("#brushtask_downloader").val();
+    let brushtask_downloader = $("#brushtask_downloader").val();
     if (!brushtask_downloader) {
       $("#brushtask_downloader").addClass("is-invalid");
       return;
     } else {
       $("#brushtask_downloader").removeClass("is-invalid");
     }
-    var brushtask_totalsize = $("#brushtask_totalsize").val();
+    let brushtask_totalsize = $("#brushtask_totalsize").val();
     if (brushtask_totalsize && isNaN(brushtask_totalsize)) {
       $("#brushtask_totalsize").addClass("is-invalid");
       return;
     }
-    var brushtask_state = $("#brushtask_state").val();
-    var brushtask_transfer = $("#brushtask_transfer").prop('checked');
-    var brushtask_sendmessage = $("#brushtask_sendmessage").prop('checked');
-    var brushtask_forceupload = $("#brushtask_forceupload").prop('checked');
-    var brushtask_free = $("#brushtask_free").val();
-    var brushtask_hr = $("#brushtask_hr").val();
+    let brushtask_state = $("#brushtask_state").val();
+    let brushtask_transfer = $("#brushtask_transfer").prop('checked');
+    let brushtask_sendmessage = $("#brushtask_sendmessage").prop('checked');
+    let brushtask_forceupload = $("#brushtask_forceupload").prop('checked');
+    let brushtask_free = $("#brushtask_free").val();
+    let brushtask_hr = $("#brushtask_hr").val();
     //种子大小
-    var brushtask_torrent_size_do = $("#brushtask_torrent_size_do").val();
-    var brushtask_torrent_size = $("#brushtask_torrent_size").val();
+    let brushtask_torrent_size_do = $("#brushtask_torrent_size_do").val();
+    let brushtask_torrent_size = $("#brushtask_torrent_size").val();
     if (brushtask_torrent_size_do && !brushtask_torrent_size) {
       $("#brushtask_torrent_size").addClass("is-invalid");
       return;
@@ -848,11 +863,11 @@
       $("#brushtask_torrent_size").removeClass("is-invalid");
     }
     //包含
-    var brushtask_include = $("#brushtask_include").val();
+    let brushtask_include = $("#brushtask_include").val();
     //排除
-    var brushtask_exclude = $("#brushtask_exclude").val();
+    let brushtask_exclude = $("#brushtask_exclude").val();
     //同时下载数
-    var brushtask_dlcount = $("#brushtask_dlcount").val();
+    let brushtask_dlcount = $("#brushtask_dlcount").val();
     if (brushtask_dlcount && isNaN(brushtask_dlcount)) {
       $("#brushtask_dlcount").addClass("is-invalid");
       return;
@@ -860,7 +875,7 @@
       $("#brushtask_dlcount").removeClass("is-invalid");
     }
     //上传限速
-    var brushtask_upspeed = $("#brushtask_upspeed").val();
+    let brushtask_upspeed = $("#brushtask_upspeed").val();
     if (brushtask_upspeed && isNaN(brushtask_upspeed)) {
       $("#brushtask_upspeed").addClass("is-invalid");
       return;
@@ -868,7 +883,7 @@
       $("#brushtask_upspeed").removeClass("is-invalid");
     }
     //下载限速
-    var brushtask_downspeed = $("#brushtask_downspeed").val();
+    let brushtask_downspeed = $("#brushtask_downspeed").val();
     if (brushtask_downspeed && isNaN(brushtask_downspeed)) {
       $("#brushtask_downspeed").addClass("is-invalid");
       return;
@@ -876,8 +891,8 @@
       $("#brushtask_downspeed").removeClass("is-invalid");
     }
     //发布时间
-    var brushtask_pubdate_do = $("#brushtask_pubdate_do").val();
-    var brushtask_pubdate = $("#brushtask_pubdate").val();
+    let brushtask_pubdate_do = $("#brushtask_pubdate_do").val();
+    let brushtask_pubdate = $("#brushtask_pubdate").val();
     if (brushtask_pubdate_do && !brushtask_pubdate) {
       $("#brushtask_pubdate").addClass("is-invalid");
       return;
@@ -892,8 +907,8 @@
       $("#brushtask_pubdate").removeClass("is-invalid");
     }
     //做种人数
-    var brushtask_peercount_do = $("#brushtask_peercount_do").val();
-    var brushtask_peercount = $("#brushtask_peercount").val();
+    let brushtask_peercount_do = $("#brushtask_peercount_do").val();
+    let brushtask_peercount = $("#brushtask_peercount").val();
     if (brushtask_peercount_do && !brushtask_peercount) {
       $("#brushtask_peercount").addClass("is-invalid");
       return;
@@ -908,8 +923,8 @@
       $("#brushtask_peercount").removeClass("is-invalid");
     }
     //做种时间
-    var brushtask_seedtime_do = $("#brushtask_seedtime_do").val();
-    var brushtask_seedtime = $("#brushtask_seedtime").val();
+    let brushtask_seedtime_do = $("#brushtask_seedtime_do").val();
+    let brushtask_seedtime = $("#brushtask_seedtime").val();
     if (brushtask_seedtime_do && !brushtask_seedtime) {
       $("#brushtask_seedtime").addClass("is-invalid");
       return;
@@ -921,8 +936,8 @@
       $("#brushtask_seedtime").removeClass("is-invalid");
     }
     //分享率
-    var brushtask_seedratio_do = $("#brushtask_seedratio_do").val();
-    var brushtask_seedratio = $("#brushtask_seedratio").val();
+    let brushtask_seedratio_do = $("#brushtask_seedratio_do").val();
+    let brushtask_seedratio = $("#brushtask_seedratio").val();
     if (brushtask_seedratio_do && !brushtask_seedratio) {
       $("#brushtask_seedratio").addClass("is-invalid");
       return;
@@ -934,8 +949,8 @@
       $("#brushtask_seedratio").removeClass("is-invalid");
     }
     //上传量
-    var brushtask_seedsize_do = $("#brushtask_seedsize_do").val();
-    var brushtask_seedsize = $("#brushtask_seedsize").val();
+    let brushtask_seedsize_do = $("#brushtask_seedsize_do").val();
+    let brushtask_seedsize = $("#brushtask_seedsize").val();
     if (brushtask_seedsize_do && !brushtask_seedsize) {
       $("#brushtask_seedsize").addClass("is-invalid");
       return;
@@ -947,8 +962,8 @@
       $("#brushtask_seedsize").removeClass("is-invalid");
     }
     //下载耗时
-    var brushtask_dltime_do = $("#brushtask_dltime_do").val();
-    var brushtask_dltime = $("#brushtask_dltime").val();
+    let brushtask_dltime_do = $("#brushtask_dltime_do").val();
+    let brushtask_dltime = $("#brushtask_dltime").val();
     if (brushtask_dltime_do && !brushtask_dltime) {
       $("#brushtask_dltime").addClass("is-invalid");
       return;
@@ -960,8 +975,8 @@
       $("#brushtask_dltime").removeClass("is-invalid");
     }
     //平均上传速度
-    var brushtask_avg_upspeed_do = $("#brushtask_avg_upspeed_do").val();
-    var brushtask_avg_upspeed = $("#brushtask_avg_upspeed").val();
+    let brushtask_avg_upspeed_do = $("#brushtask_avg_upspeed_do").val();
+    let brushtask_avg_upspeed = $("#brushtask_avg_upspeed").val();
     if (brushtask_avg_upspeed_do && !brushtask_avg_upspeed) {
       $("#brushtask_avg_upspeed").addClass("is-invalid");
       return;
@@ -974,7 +989,7 @@
     }
 
     // 参数
-    var params = {
+    const params = {
       brushtask_id: brushtask_id,
       brushtask_name: brushtask_name,
       brushtask_site: brushtask_site,

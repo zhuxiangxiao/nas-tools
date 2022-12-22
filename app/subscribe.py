@@ -95,7 +95,7 @@ class Subscribe:
                 # 根据TMDBID查询
                 media_info = MetaInfo(title=title, mtype=mtype)
                 media_info.set_tmdb_info(media.get_tmdb_info(mtype=mtype, tmdbid=tmdbid))
-                if not media_info or not media_info.tmdb_info or not tmdbid:
+                if not media_info.tmdb_info:
                     return 1, "无法查询到媒体信息", None
             else:
                 # 根据名称和年份查询
@@ -499,6 +499,7 @@ class Subscribe:
             tmdbid = rss_info.get("tmdbid")
             season = rss_info.get("season") or 1
             total = rss_info.get("total")
+            total_ep = rss_info.get("total_ep")
             lack = rss_info.get("lack")
             # 更新TMDB信息
             media_info = self.__get_media_info(tmdbid=tmdbid,
@@ -511,6 +512,8 @@ class Subscribe:
                 total_episode = self.media.get_tmdb_season_episodes_num(sea=int(str(season).replace("S", "")),
                                                                         tv_info=media_info.tmdb_info)
                 # 设置总集数的，不更新集数
+                if total_ep:
+                    total_episode = total_ep
                 if total_episode and (name != media_info.title or total != total_episode):
                     # 新的缺失集数
                     lack_episode = total_episode - (total - lack)
@@ -537,7 +540,7 @@ class Subscribe:
         """
         if tmdbid and not tmdbid.startswith("DB:"):
             media_info = MetaInfo(title="%s %s".strip() % (name, year))
-            tmdb_info = Media().get_tmdb_info(mtype=mtype, title=name, year=year, tmdbid=tmdbid)
+            tmdb_info = Media().get_tmdb_info(mtype=mtype, tmdbid=tmdbid)
             media_info.set_tmdb_info(tmdb_info)
         else:
             media_info = Media().get_media_info(title="%s %s" % (name, year), mtype=mtype, strict=True, cache=cache)

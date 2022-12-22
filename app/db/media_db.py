@@ -5,11 +5,12 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.pool import QueuePool
 from app.db.models import BaseMedia, MEDIASYNCITEMS, MEDIASYNCSTATISTIC
-from config import CONFIG
+from app.utils.exception_utils import ExceptionUtils
+from config import Config
 
 lock = threading.Lock()
 _Engine = create_engine(
-    f"sqlite:///{os.path.join(CONFIG.get_config_path(), 'media.db')}?check_same_thread=False",
+    f"sqlite:///{os.path.join(Config().get_config_path(), 'media.db')}?check_same_thread=False",
     echo=False,
     poolclass=QueuePool,
     pool_pre_ping=True,
@@ -54,7 +55,7 @@ class MediaDb:
             self.session.commit()
             return True
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             self.session.rollback()
         return False
 
@@ -68,7 +69,7 @@ class MediaDb:
             self.session.commit()
             return True
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             self.session.rollback()
         return False
 
@@ -89,7 +90,7 @@ class MediaDb:
             self.session.commit()
             return True
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             self.session.rollback()
         return False
 

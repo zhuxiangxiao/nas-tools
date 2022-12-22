@@ -2,15 +2,15 @@ import json
 import threading
 from datetime import datetime
 
-import log
-from app.message.channel.channel import IMessageChannel
+from app.message.message_client import IMessageClient
 from app.utils import RequestUtils
+from app.utils.exception_utils import ExceptionUtils
 from config import DEFAULT_WECHAT_PROXY
 
 lock = threading.Lock()
 
 
-class WeChat(IMessageChannel):
+class WeChat(IMessageClient):
     _instance = None
     _access_token = None
     _expires_in = None
@@ -71,18 +71,9 @@ class WeChat(IMessageChannel):
                         self._expires_in = ret_json.get('expires_in')
                         self._access_token_time = datetime.now()
             except Exception as e:
-                log.console(str(e))
+                ExceptionUtils.exception_traceback(e)
                 return None
         return self._access_token
-
-    def get_status(self):
-        """
-        测试连通性
-        """
-        flag, msg = self.__send_message("测试", "这是一条测试消息")
-        if not flag:
-            log.error("【WeChat】发送消息失败：%s" % msg)
-        return flag
 
     def __send_message(self, title, text, user_id=None):
         """
@@ -166,7 +157,7 @@ class WeChat(IMessageChannel):
             ret_code, ret_msg = self.__send_message(title, text, user_id)
         return ret_code, ret_msg
 
-    def send_list_msg(self, medias: list, user_id="", title="", url=""):
+    def send_list_msg(self, medias: list, user_id="", title="", **kwargs):
         """
         发送列表类消息
         """
@@ -180,11 +171,15 @@ class WeChat(IMessageChannel):
         articles = []
         index = 1
         for media in medias:
+            if media.get_vote_string():
+                title = f"{index}. {media.get_title_string()}\n{media.get_type_string()}，{media.get_vote_string()}"
+            else:
+                title = f"{index}. {media.get_title_string()}\n{media.get_type_string()}"
             articles.append({
-                "title": "%s. %s" % (index, media.get_title_vote_string()),
+                "title": title,
                 "description": "",
                 "picurl": media.get_message_image() if index == 1 else media.get_poster_image(),
-                "url": url
+                "url": media.get_detail_url()
             })
             index += 1
         req_json = {
@@ -216,4 +211,5 @@ class WeChat(IMessageChannel):
             else:
                 return False, None
         except Exception as err:
+            ExceptionUtils.exception_traceback(err)
             return False, str(err)

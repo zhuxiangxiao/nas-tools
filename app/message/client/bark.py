@@ -1,11 +1,11 @@
 from urllib.parse import quote_plus
 
-import log
-from app.message.channel.channel import IMessageChannel
+from app.message.message_client import IMessageClient
 from app.utils import RequestUtils, StringUtils
+from app.utils.exception_utils import ExceptionUtils
 
 
-class Bark(IMessageChannel):
+class Bark(IMessageClient):
     _server = None
     _apikey = None
     _client_config = {}
@@ -16,18 +16,8 @@ class Bark(IMessageChannel):
 
     def init_config(self):
         if self._client_config:
-            scheme, netloc = StringUtils.get_url_netloc(self._client_config.get('server'))
-            self._server = f"{scheme}://{netloc}"
+            self._server = StringUtils.get_base_url(self._client_config.get('server'))
             self._apikey = self._client_config.get('apikey')
-
-    def get_status(self):
-        """
-        测试连通性
-        """
-        flag, msg = self.send_msg("测试", "这是一条测试消息")
-        if not flag:
-            log.error("【Bark】发送消息失败：%s" % msg)
-        return flag
 
     def send_msg(self, title, text="", image="", url="", user_id=""):
         """
@@ -57,6 +47,7 @@ class Bark(IMessageChannel):
             else:
                 return False, "未获取到返回信息"
         except Exception as msg_e:
+            ExceptionUtils.exception_traceback(msg_e)
             return False, str(msg_e)
 
     def send_list_msg(self, **kwargs):

@@ -1,5 +1,6 @@
 import os
 import shutil
+from threading import Lock
 import ruamel.yaml
 
 # 菜单对应关系，配置WeChat应用中配置的菜单ID与执行命令的对应关系，需要手工修改
@@ -49,7 +50,7 @@ DEFAULT_TMDB_IMAGE = 'https://s3.bmp.ovh/imgs/2022/07/10/77ef9500c851935b.webp'
 # 默认微信消息代理服务器地址
 DEFAULT_WECHAT_PROXY = 'https://wechat.nastool.cn'
 # 默认OCR识别服务地址
-DEFAULT_OCR_SERVER = 'https://nastool.cn/ocr/'
+DEFAULT_OCR_SERVER = 'https://nastool.cn'
 # 默认TMDB代理服务地址
 DEFAULT_TMDB_PROXY = 'https://tmdb.nastool.cn'
 # TMDB图片地址
@@ -62,7 +63,7 @@ TORRENT_SEARCH_PARAMS = {
     "restype": {
         "BLURAY": r"Blu-?Ray|BD|BDRIP",
         "REMUX": r"REMUX",
-        "DOLBY": r"DOLBY",
+        "DOLBY": r"DOLBY|DOVI|\s+DV$|\s+DV\s+",
         "WEB": r"WEB-?DL|WEBRIP",
         "HDTV": r"U?HDTV",
         "UHD": r"UHD",
@@ -86,7 +87,8 @@ KEYWORD_SEARCH_WEIGHT_2 = [10, 2, 1]
 KEYWORD_SEARCH_WEIGHT_3 = [10, 2]
 KEYWORD_STR_SIMILARITY_THRESHOLD = 0.2
 KEYWORD_DIFF_SCORE_THRESHOLD = 30
-KEYWORD_BLACKLIST = ['中字', '韩语', '双字', '中英', '日语', '双语', '国粤', 'HD', 'BD', '中日', '粤语', '完全版', '法语',
+KEYWORD_BLACKLIST = ['中字', '韩语', '双字', '中英', '日语', '双语', '国粤', 'HD', 'BD', '中日', '粤语', '完全版',
+                     '法语',
                      '西班牙语', 'HRHDTVAC3264', '未删减版', '未删减', '国语', '字幕组', '人人影视', 'www66ystv',
                      '人人影视制作', '英语', 'www6vhaotv', '无删减版', '完成版', '德意']
 # 网络测试对象
@@ -102,13 +104,14 @@ NETTEST_TARGETS = ["www.themoviedb.org",
 # 站点签到支持的识别XPATH
 SITE_CHECKIN_XPATH = [
     '//a[@id="signed"]',
-    '//a[contains(@href, "attendance.php")]',
+    '//a[contains(@href, "attendance")]',
     '//a[contains(text(), "签到")]',
     '//a/b[contains(text(), "签 到")]',
     '//span[@id="sign_in"]/a',
     '//a[contains(@href, "addbonus")]',
     '//input[@class="dt_button"][contains(@value, "打卡")]',
-    '//a[contains(@href, "sign_in")]'
+    '//a[contains(@href, "sign_in")]',
+    '//a[@id="do-attendance"]'
 ]
 
 # 站点详情页字幕下载链接识别XPATH
@@ -116,7 +119,65 @@ SITE_SUBTITLE_XPATH = [
     '//td[@class="rowhead"][text()="字幕"]/following-sibling::td//a/@href',
 ]
 
+# 站点登录界面元素XPATH
+SITE_LOGIN_XPATH = {
+    "username": [
+        '//input[@name="username"]'
+    ],
+    "password": [
+        '//input[@name="password"]'
+    ],
+    "captcha": [
+        '//input[@name="imagestring"]'
+    ],
+    "captcha_img": [
+        '//img[@alt="CAPTCHA"]/@src',
+        '//img[@alt="SECURITY CODE"]/@src'
+    ],
+    "submit": [
+        '//input[@type="submit"]',
+        '//button[@type="submit"]'
+    ],
+    "error": [
+        "//table[@class='main']//td[@class='text']/text()"
+    ],
+    "twostep": [
+        '//input[@name="two_step_code"]',
+        '//input[@name="2fa_secret"]'
+    ]
+}
 
+# WebDriver路径
+WEBDRIVER_PATH = {
+    "Docker": "/usr/lib/chromium/chromedriver",
+    "Synology": "/var/packages/NASTool/target/bin/chromedriver"
+}
+
+# Xvfb虚拟显示路程
+XVFB_PATH = [
+    "/usr/bin/Xvfb",
+    "/usr/local/bin/Xvfb"
+]
+
+# 线程锁
+lock = Lock()
+
+# 全局实例
+_CONFIG = None
+
+
+def singleconfig(cls):
+    def _singleconfig(*args, **kwargs):
+        global _CONFIG
+        if not _CONFIG:
+            with lock:
+                _CONFIG = cls(*args, **kwargs)
+        return _CONFIG
+
+    return _singleconfig
+
+
+@singleconfig
 class Config(object):
     _config = {}
     _config_path = None
@@ -180,7 +241,3 @@ class Config(object):
         if domain and not domain.startswith('http'):
             domain = "http://" + domain
         return domain
-
-
-# 配置实例
-CONFIG = Config()

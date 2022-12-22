@@ -140,6 +140,7 @@ class DOUBANMEDIAS(Base):
     RATING = Column(Text)
     IMAGE = Column(Text)
     STATE = Column(Text)
+    ADD_TIME = Column(Text)
 
 
 class DOWNLOADHISTORY(Base):
@@ -295,6 +296,21 @@ class RSSTVEPISODES(Base):
     EPISODES = Column(Text)
 
 
+class TORRENTREMOVETASK(Base):
+    __tablename__ = 'TORRENT_REMOVE_TASK'
+
+    ID = Column(Integer, Sequence('ID'), primary_key=True)
+    NAME = Column(Text)
+    ACTION = Column(Integer)
+    INTERVAL = Column(Integer)
+    ENABLED = Column(Integer)
+    SAMEDATA = Column(Integer)
+    ONLYNASTOOL = Column(Integer)
+    DOWNLOADER = Column(Text)
+    CONFIG = Column(Text)
+    NOTE = Column(Text)
+
+
 class SEARCHRESULTINFO(Base):
     __tablename__ = 'SEARCH_RESULT_INFO'
 
@@ -419,9 +435,16 @@ class SITEUSERINFOSTATS(Base):
     SEEDING_SIZE = Column(Integer)
     BONUS = Column(Float)
     URL = Column(Text, unique=True)
-    FAVICON = Column(Text)
     MSG_UNREAD = Column(Integer)
     EXT_INFO = Column(Text)
+
+
+class SITEFAVICON(Base):
+    __tablename__ = 'SITE_FAVICON'
+
+    SITE = Column(Text, primary_key=True)
+    URL = Column(Text)
+    FAVICON = Column(Text)
 
 
 class SITEUSERSEEDINGINFO(Base):

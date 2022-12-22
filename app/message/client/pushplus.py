@@ -1,12 +1,12 @@
 import time
 from urllib.parse import urlencode
 
-import log
-from app.message.channel.channel import IMessageChannel
+from app.message.message_client import IMessageClient
 from app.utils import RequestUtils
+from app.utils.exception_utils import ExceptionUtils
 
 
-class PushPlus(IMessageChannel):
+class PushPlus(IMessageClient):
     _token = None
     _topic = None
     _channel = None
@@ -21,17 +21,8 @@ class PushPlus(IMessageChannel):
         if self._client_config:
             self._token = self._client_config.get('token')
             self._topic = self._client_config.get('topic')
-            self._channel = self._client_config.get('channel')
+            self._channel = self._client_config.get('client')
             self._webhook = self._client_config.get('webhook')
-
-    def get_status(self):
-        """
-        测试连通性
-        """
-        flag, msg = self.send_msg("测试", "这是一条测试消息")
-        if not flag:
-            log.error("【PushPlus】发送消息失败：%s" % msg)
-        return flag
 
     def send_msg(self, title, text="", image="", url="", user_id=""):
         """
@@ -51,7 +42,7 @@ class PushPlus(IMessageChannel):
         try:
             values = {
                 "token": self._token,
-                "channel": self._channel,
+                "client": self._channel,
                 "topic": self._topic,
                 "webhook": self._webhook,
                 "title": title,
@@ -71,6 +62,7 @@ class PushPlus(IMessageChannel):
             else:
                 return False, "未获取到返回信息"
         except Exception as msg_e:
+            ExceptionUtils.exception_traceback(msg_e)
             return False, str(msg_e)
 
     def send_list_msg(self, **kwargs):

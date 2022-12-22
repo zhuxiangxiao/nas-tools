@@ -7,10 +7,11 @@ import log
 from app.downloader.downloader import Downloader
 from app.filter import Filter
 from app.helper import DbHelper
-from app.media import Media
+from app.media import Media, MetaInfo
 from app.sites import Sites
 from app.subscribe import Subscribe
 from app.utils import DomUtils, RequestUtils, StringUtils
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.rsstitle_utils import RssTitleUtils
 from app.utils.types import MediaType, SearchType
 
@@ -141,13 +142,21 @@ class Rss:
                             log.info(f"【Rss】{title} 已成功订阅过")
                             continue
                         # 识别种子名称，开始检索TMDB
-                        media_info = self.media.get_media_info(title=title, subtitle=description)
-                        if not media_info:
-                            log.warn(f"【Rss】{title} 识别媒体信息出错！")
-                            continue
-                        elif not media_info.tmdb_info:
-                            log.info(f"【Rss】{title} 识别为 {media_info.get_name()} 未匹配到媒体信息")
-                            continue
+                        media_info = MetaInfo(title=title, subtitle=description)
+                        cache_info = self.media.get_cache_info(media_info)
+                        if cache_info.get("id"):
+                            # 使用缓存信息
+                            media_info.tmdb_id = cache_info.get("id")
+                            media_info.type = cache_info.get("type")
+                            media_info.title = cache_info.get("title")
+                            media_info.year = cache_info.get("year")
+                        else:
+                            # 重新查询TMDB
+                            media_info = self.media.get_media_info(title=title, subtitle=description)
+                            if not media_info:
+                                log.warn(f"【Rss】{title} 无法识别出媒体信息！")
+                            elif not media_info.tmdb_info:
+                                log.info(f"【Rss】{title} 识别为 {media_info.get_name()} 未匹配到TMDB媒体信息")
                         # 大小及种子页面
                         media_info.set_torrent_info(size=size,
                                                     page_url=page_url,
@@ -170,6 +179,10 @@ class Rss:
                             continue
                         # 非模糊匹配命中
                         if not match_info.get("fuzzy_match"):
+                            # 匹配到订阅，如没有TMDB信息则重新查询
+                            if not media_info.tmdb_info:
+                                media_info.set_tmdb_info(self.media.get_tmdb_info(mtype=media_info.type,
+                                                                                  tmdbid=media_info.tmdb_id))
                             # 如果是电影
                             if media_info.type == MediaType.MOVIE:
                                 # 非洗版时检查是否存在
@@ -254,6 +267,7 @@ class Rss:
                             rss_download_torrents.append(media_info)
                             res_num = res_num + 1
                     except Exception as e:
+                        ExceptionUtils.exception_traceback(e)
                         log.error("【Rss】处理RSS发生错误：%s - %s" % (str(e), traceback.format_exc()))
                         continue
                 log.info("【Rss】%s 处理结束，匹配到 %s 个有效资源" % (site_name, res_num))
@@ -315,13 +329,14 @@ class Rss:
         ret_array = []
         if not url:
             return []
-        _, netloc = StringUtils.get_url_netloc(url)
+        site_domain = StringUtils.get_url_domain(url)
         try:
             ret = RequestUtils().get_res(url)
             if not ret:
                 return []
             ret.encoding = ret.apparent_encoding
         except Exception as e2:
+            ExceptionUtils.exception_traceback(e2)
             log.console(str(e2))
             return []
         if ret:
@@ -338,8 +353,8 @@ class Rss:
                         if not title:
                             continue
                         # 标题特殊处理
-                        if netloc and netloc in _special_title_sites:
-                            title = _special_title_sites.get(netloc)(title)
+                        if site_domain and site_domain in _special_title_sites:
+                            title = _special_title_sites.get(site_domain)(title)
                         # 描述
                         description = DomUtils.tag_value(item, "description", default="")
                         # 种子页面
@@ -372,10 +387,10 @@ class Rss:
                                     'pubdate': pubdate}
                         ret_array.append(tmp_dict)
                     except Exception as e1:
-                        log.console(str(e1))
+                        ExceptionUtils.exception_traceback(e1)
                         continue
             except Exception as e2:
-                log.console(str(e2))
+                ExceptionUtils.exception_traceback(e2)
                 return ret_array
         return ret_array
 
@@ -434,8 +449,7 @@ class Rss:
                                                                  str(int(year) + 1),
                                                                  str(int(year) - 1)]:
                             continue
-                        if name not in [str(media_info.title),
-                                        str(media_info.original_title)]:
+                        if name != media_info.title:
                             continue
                 # 模糊匹配
                 else:
@@ -443,7 +457,7 @@ class Rss:
                     if year and str(year) != str(media_info.year):
                         continue
                     # 匹配关键字或正则表达式
-                    search_title = f"{media_info.org_string} {media_info.title} {media_info.original_title} {media_info.year}"
+                    search_title = f"{media_info.org_string} {media_info.title} {media_info.year}"
                     if not re.search(name, search_title, re.I) and name not in search_title:
                         continue
                 # 媒体匹配成功
@@ -475,8 +489,7 @@ class Rss:
                         if year and str(year) != str(media_info.year):
                             continue
                         # 匹配名称
-                        if name not in [str(media_info.title),
-                                        str(media_info.original_title)]:
+                        if name != media_info.title:
                             continue
                     # 匹配季，季可以为空
                     if season and season != media_info.get_season_string():
@@ -490,7 +503,7 @@ class Rss:
                     if year and str(year) != str(media_info.year):
                         continue
                     # 匹配关键字或正则表达式
-                    search_title = f"{media_info.org_string} {media_info.title} {media_info.original_title} {media_info.year}"
+                    search_title = f"{media_info.org_string} {media_info.title} {media_info.year}"
                     if not re.search(name, search_title, re.I) and name not in search_title:
                         continue
                 # 媒体匹配成功

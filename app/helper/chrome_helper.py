@@ -1,11 +1,15 @@
 import json
 import os.path
 import tempfile
+import time
 from functools import reduce
 from threading import Lock
 
 from app.utils import SystemUtils, RequestUtils
-import undetected_chromedriver.v2 as uc
+import undetected_chromedriver as uc
+
+from app.utils.exception_utils import ExceptionUtils
+from config import WEBDRIVER_PATH
 
 CHROME_LOCK = Lock()
 lock = Lock()
@@ -13,11 +17,16 @@ lock = Lock()
 
 class ChromeHelper(object):
 
-    _executable_path = "/usr/lib/chromium/chromedriver" if SystemUtils.is_docker() else None
+    _executable_path = None
+        
     _chrome = None
     _headless = False
 
     def __init__(self, headless=False):
+
+        chrome_path = SystemUtils.get_system().value
+        self._executable_path = WEBDRIVER_PATH.get(chrome_path)
+
         if not os.environ.get("NASTOOL_DISPLAY"):
             self._headless = True
         else:
@@ -31,10 +40,15 @@ class ChromeHelper(object):
             return self._chrome
 
     def get_status(self):
+        # FIXME Widnows下使用浏览器内核会导致启动多份进程，暂时禁用
+        if SystemUtils.is_windows():
+            return False
+        # 指定了WebDriver路径的，如果路径不存在则不启用
         if self._executable_path \
-                and os.path.exists(self._executable_path):
-            return True
-        return False
+                and not os.path.exists(self._executable_path):
+            return False
+        # 否则自动下载WebDriver
+        return True
 
     def __get_browser(self):
         if not self.get_status():
@@ -55,7 +69,7 @@ class ChromeHelper(object):
         }
         options.add_experimental_option("prefs", prefs)
         chrome = ChromeWithPrefs(options=options, driver_executable_path=self._executable_path)
-        chrome.set_page_load_timeout(30)
+        chrome.set_page_load_timeout(10)
         return chrome
 
     def visit(self, url, ua=None, cookie=None):
@@ -71,6 +85,28 @@ class ChromeHelper(object):
             for cookie in RequestUtils.cookie_parse(cookie, array=True):
                 self.browser.add_cookie(cookie)
             self.browser.get(url)
+        self.browser.implicitly_wait(10)
+
+    def new_tab(self, url, ua=None, cookie=None):
+        if not self.browser:
+            return
+        # 新开一个标签页
+        self.browser.switch_to.new_window('tab')
+        # 访问URL
+        self.visit(url=url, ua=ua, cookie=cookie)
+
+    def close_tab(self):
+        self.browser.close()
+        self.browser.switch_to.window(self.browser.window_handles[0])
+
+    def pass_cloudflare(self, waittime=10):
+        cloudflare = False
+        for i in range(0, waittime):
+            if self.get_title() != "Just a moment...":
+                cloudflare = True
+                break
+            time.sleep(1)
+        return cloudflare
 
     def get_title(self):
         if not self.browser:
@@ -95,9 +131,29 @@ class ChromeHelper(object):
     def get_ua(self):
         return self.browser.execute_script("return navigator.userAgent")
 
-    def __del__(self):
+    def quit(self):
         if self._chrome:
+            self._chrome.close()
             self._chrome.quit()
+            self._fixup_uc_pid_leak()
+
+    def _fixup_uc_pid_leak(self):
+        """
+        uc 在处理退出时为强制kill进程，没有调用wait，会导致出现僵尸进程，此处增加wait，确保系统正常回收
+        :return:
+        """
+        try:
+            # chromedriver 进程
+            if hasattr(self._chrome, "service") and getattr(self._chrome.service, "process", None):
+                self._chrome.service.process.wait(3)
+            # chrome 进程
+            os.waitpid(self._chrome.browser_pid, 0)
+        except Exception as e:
+            ExceptionUtils.exception_traceback(e)
+            pass
+
+    def __del__(self):
+        self.quit()
 
 
 class ChromeWithPrefs(uc.Chrome):

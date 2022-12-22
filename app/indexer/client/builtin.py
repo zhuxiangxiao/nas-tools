@@ -4,15 +4,15 @@ import time
 import log
 from app.indexer.client.rarbg import Rarbg
 from app.utils.types import SearchType, IndexerType
-from config import CONFIG
-from app.indexer.indexer import IIndexer
+from config import Config
+from app.indexer.index_client import IIndexClient
 from app.indexer.client.spider import TorrentSpider
 from app.sites import Sites
 from app.utils import StringUtils
 from app.helper import ProgressHelper, IndexerHelper
 
 
-class BuiltinIndexer(IIndexer):
+class BuiltinIndexer(IIndexClient):
     index_type = IndexerType.BUILTIN.value
     progress = None
     sites = None
@@ -31,7 +31,7 @@ class BuiltinIndexer(IIndexer):
     def get_indexers(self, check=True, public=True, indexer_id=None):
         ret_indexers = []
         # 选中站点配置
-        indexer_sites = CONFIG.get_config("pt").get("indexer_sites") or []
+        indexer_sites = Config().get_config("pt").get("indexer_sites") or []
         _indexer_domains = []
         # 私有站点
         for site in Sites().get_sites():
@@ -59,8 +59,7 @@ class BuiltinIndexer(IIndexer):
                                                   proxy=proxy,
                                                   ua=site.get("ua"),
                                                   language=language,
-                                                  pri=site.get('pri'),
-                                                  favicon=site.get('favicon'))
+                                                  pri=site.get('pri'))
             if indexer:
                 if indexer_id and indexer.id == indexer_id:
                     return indexer
@@ -93,7 +92,6 @@ class BuiltinIndexer(IIndexer):
                indexer,
                key_word,
                filter_args: dict,
-               match_type,
                match_media,
                in_from: SearchType):
         """
@@ -104,14 +102,14 @@ class BuiltinIndexer(IIndexer):
         if filter_args is None:
             filter_args = {}
         # 不是配置的索引站点过滤掉
-        indexer_sites = CONFIG.get_config("pt").get("indexer_sites") or []
+        indexer_sites = Config().get_config("pt").get("indexer_sites") or []
         if indexer_sites and indexer.id not in indexer_sites:
             return []
         # 不在设定搜索范围的站点过滤掉
         if filter_args.get("site") and indexer.name not in filter_args.get("site"):
             return []
-        # 搜索条件没有过滤规则时，非WEB搜索模式下使用站点的过滤规则
-        if in_from != SearchType.WEB and not filter_args.get("rule") and indexer.rule:
+        # 搜索条件没有过滤规则时，使用站点的过滤规则
+        if not filter_args.get("rule") and indexer.rule:
             filter_args.update({"rule": indexer.rule})
         # 计算耗时
         start_time = datetime.datetime.now()
@@ -124,7 +122,7 @@ class BuiltinIndexer(IIndexer):
             return []
         if indexer.parser == "rarbg":
             imdb_id = match_media.imdb_id if match_media else None
-            result_array = Rarbg(cookies=indexer.cookie).search(keyword=search_word, indexer=indexer, imdb_id=imdb_id)
+            result_array = Rarbg().search(keyword=search_word, indexer=indexer, imdb_id=imdb_id)
         else:
             result_array = self.__spider_search(keyword=search_word, indexer=indexer)
         if len(result_array) == 0:
@@ -137,7 +135,6 @@ class BuiltinIndexer(IIndexer):
                                               order_seq=order_seq,
                                               indexer=indexer,
                                               filter_args=filter_args,
-                                              match_type=match_type,
                                               match_media=match_media,
                                               start_time=start_time)
 
@@ -150,7 +147,7 @@ class BuiltinIndexer(IIndexer):
         indexer = self.get_indexers(indexer_id=index_id)
         if not indexer:
             return []
-        return self.__spider_search(indexer, page=page, keyword=keyword, timeout=10)
+        return self.__spider_search(indexer, page=page, keyword=keyword, timeout=30)
 
     @staticmethod
     def __spider_search(indexer, page=None, keyword=None, timeout=20):

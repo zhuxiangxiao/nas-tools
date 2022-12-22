@@ -1,7 +1,7 @@
 import log
 from app.utils.types import DownloaderType
-from config import CONFIG
-from app.downloader.client.client import IDownloadClient
+from config import Config
+from app.downloader.download_client import IDownloadClient
 from app.downloader.client.py115 import Py115
 
 
@@ -13,7 +13,7 @@ class Client115(IDownloadClient):
 
     def get_config(self):
         # 读取配置文件
-        cloudconfig = CONFIG.get_config('client115')
+        cloudconfig = Config().get_config('client115')
         if cloudconfig:
             self.downclient = Py115(cloudconfig.get("cookie"))
 
@@ -93,7 +93,7 @@ class Client115(IDownloadClient):
     def stop_torrents(self, ids):
         pass
 
-    def set_torrents_status(self, ids):
+    def set_torrents_status(self, ids, tags=None):
         return self.delete_torrents(ids=ids, delete_file=False)
 
     def get_download_dirs(self):

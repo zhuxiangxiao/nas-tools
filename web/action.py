@@ -1,11 +1,12 @@
 import base64
 import datetime
+import hashlib
 import importlib
 import json
 import os.path
 import re
 import shutil
-import sys
+import signal
 from math import floor
 from urllib.parse import unquote
 
@@ -16,33 +17,33 @@ from werkzeug.security import generate_password_hash
 import log
 from app.brushtask import BrushTask
 from app.doubansync import DoubanSync
-from app.downloader import Qbittorrent, Transmission, Downloader
+from app.downloader import Downloader
+from app.downloader.client import Qbittorrent, Transmission
 from app.filetransfer import FileTransfer
 from app.filter import Filter
-from app.helper import DbHelper, DictHelper
-from app.helper import ProgressHelper, ThreadHelper, MetaHelper
-from app.helper.words_helper import WordsHelper
-from app.indexer import BuiltinIndexer
-from app.media import Category, Media, MetaInfo
+from app.helper import DbHelper, DictHelper, ChromeHelper, ProgressHelper, ThreadHelper, \
+    MetaHelper, DisplayHelper, WordsHelper
+from app.indexer import Indexer
+from app.media import Category, Media, MetaInfo, MetaBase
 from app.media.bangumi import Bangumi
 from app.media.douban import DouBan
-from app.mediaserver import Emby, Jellyfin, Plex
 from app.mediaserver import MediaServer
 from app.message import Message, MessageCenter
 from app.rss import Rss
 from app.rsschecker import RssChecker
-from app.scheduler import Scheduler
-from app.scheduler import restart_scheduler, stop_scheduler
-from app.searcher import Searcher
+from app.scheduler import stop_scheduler
 from app.sites import Sites
+from app.sites.sitecookie import SiteCookie
 from app.subscribe import Subscribe
 from app.subtitle import Subtitle
 from app.sync import Sync
 from app.sync import stop_monitor
+from app.torrentremover import TorrentRemover
 from app.utils import StringUtils, EpisodeFormat, RequestUtils, PathUtils, SystemUtils
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import RMT_MODES, RmtMode, OsType
 from app.utils.types import SearchType, DownloaderType, SyncType, MediaType, SystemDictType
-from config import RMT_MEDIAEXT, TMDB_IMAGE_W500_URL, TMDB_IMAGE_ORIGINAL_URL, RMT_SUBEXT, CONFIG
+from config import RMT_MEDIAEXT, TMDB_IMAGE_W500_URL, TMDB_IMAGE_ORIGINAL_URL, RMT_SUBEXT, Config
 from web.backend.search_torrents import search_medias_for_web, search_media_by_message
 
 
@@ -70,6 +71,7 @@ class WebAction:
             "update_site": self.__update_site,
             "get_site": self.__get_site,
             "del_site": self.__del_site,
+            "get_site_favicon": self.__get_site_favicon,
             "restart": self.__restart,
             "update_system": self.__update_system,
             "logout": self.__logout,
@@ -182,7 +184,16 @@ class WebAction:
             "get_sites": self.__get_sites,
             "get_indexers": self.__get_indexers,
             "get_download_dirs": self.__get_download_dirs,
-            "find_hardlinks": self.__find_hardlinks
+            "find_hardlinks": self.__find_hardlinks,
+            "update_sites_cookie_ua": self.__update_sites_cookie_ua,
+            "set_site_captcha_code": self.__set_site_captcha_code,
+            "update_torrent_remove_task": self.__update_torrent_remove_task,
+            "get_torrent_remove_task": self.__get_torrent_remove_task,
+            "delete_torrent_remove_task": self.__delete_torrent_remove_task,
+            "get_remove_torrents": self.__get_remove_torrents,
+            "auto_remove_torrents": self.__auto_remove_torrents,
+            "get_douban_history": self.get_douban_history,
+            "delete_douban_history": self.__delete_douban_history
         }
 
     def action(self, cmd, data=None):
@@ -217,7 +228,7 @@ class WebAction:
         }
 
     @staticmethod
-    def shutdown_server():
+    def restart_server():
         """
         停止进程
         """
@@ -227,10 +238,17 @@ class WebAction:
         stop_monitor()
         # 签退
         logout_user()
+        # 关闭浏览器
+        ChromeHelper().quit()
         # 关闭虚拟显示
-        os.system("ps -ef|grep -w 'Xvfb'|grep -v grep|awk '{print $1}'|xargs kill -9")
-        # 杀进程
-        os.system("ps -ef|grep -w 'run:App'|grep -v grep|awk '{print $1}'|xargs kill -9")
+        DisplayHelper().quit()
+        # 重启进程
+        if os.name == "nt":
+            os.kill(os.getpid(), getattr(signal, "SIGKILL", signal.SIGTERM))
+        elif SystemUtils.is_synology():
+            os.system("ps -ef | grep -v grep | grep 'python run.py'|awk '{print $2}'|xargs kill -9")
+        else:
+            os.system("pm2 restart NAStool")
 
     @staticmethod
     def handle_message_job(msg, client, in_from=SearchType.OT, user_id=None, user_name=None):
@@ -240,7 +258,7 @@ class WebAction:
         if not msg:
             return
         commands = {
-            "/ptr": {"func": Downloader().remove_torrents, "desp": "删种"},
+            "/ptr": {"func": TorrentRemover().auto_remove_torrents, "desp": "删种"},
             "/ptt": {"func": Downloader().transfer, "desp": "下载文件转移"},
             "/pts": {"func": Sites().signin, "desp": "站点签到"},
             "/rst": {"func": Sync().transfer_all_sync, "desp": "目录同步"},
@@ -383,7 +401,7 @@ class WebAction:
         启动定时服务
         """
         commands = {
-            "autoremovetorrents": Downloader().remove_torrents,
+            "autoremovetorrents": TorrentRemover().auto_remove_torrents,
             "pttransfer": Downloader().transfer,
             "ptsignin": Sites().signin,
             "sync": Sync().transfer_all_sync,
@@ -494,7 +512,7 @@ class WebAction:
         """
         tid = data.get("id")
         if id:
-            Downloader().start_torrents(tid)
+            Downloader().start_torrents(ids=tid)
         return {"retcode": 0, "id": tid}
 
     @staticmethod
@@ -504,7 +522,7 @@ class WebAction:
         """
         tid = data.get("id")
         if id:
-            Downloader().stop_torrents(tid)
+            Downloader().stop_torrents(ids=tid)
         return {"retcode": 0, "id": tid}
 
     @staticmethod
@@ -514,7 +532,7 @@ class WebAction:
         """
         tid = data.get("id")
         if id:
-            Downloader().delete_torrents(tid)
+            Downloader().delete_torrents(ids=tid, delete_file=True)
         return {"retcode": 0, "id": tid}
 
     @staticmethod
@@ -771,7 +789,7 @@ class WebAction:
                         if not PathUtils.get_dir_files(media_path, exts=RMT_MEDIAEXT):
                             shutil.rmtree(media_path)
                     except Exception as e:
-                        log.console(str(e))
+                        ExceptionUtils.exception_traceback(e)
                     # 删除记录
                     self.dbhelper.delete_transfer_log_by_id(logid)
                 else:
@@ -796,13 +814,13 @@ class WebAction:
                             try:
                                 shutil.rmtree(dest_path)
                             except Exception as e:
-                                log.console(str(e))
+                                ExceptionUtils.exception_traceback(e)
                         elif not meta_info.get_episode_string():
                             # 电视剧但没有集数，删除季目录
                             try:
                                 shutil.rmtree(dest_path)
                             except Exception as e:
-                                log.console(str(e))
+                                ExceptionUtils.exception_traceback(e)
                             rm_parent_dir = True
                         else:
                             # 有集数的电视剧，删除对应的集数文件
@@ -813,7 +831,7 @@ class WebAction:
                                     try:
                                         os.remove(dest_file)
                                     except Exception as e:
-                                        log.console(str(e))
+                                        ExceptionUtils.exception_traceback(e)
                             rm_parent_dir = True
                         if rm_parent_dir \
                                 and not PathUtils.get_dir_files(os.path.dirname(dest_path), exts=RMT_MEDIAEXT):
@@ -821,7 +839,7 @@ class WebAction:
                             try:
                                 shutil.rmtree(os.path.dirname(dest_path))
                             except Exception as e:
-                                log.console(str(e))
+                                ExceptionUtils.exception_traceback(e)
         return {"retcode": 0}
 
     @staticmethod
@@ -829,21 +847,25 @@ class WebAction:
         """
         查询实时日志
         """
-        if log.LOG_INDEX:
+        log_list = []
+        refresh_new = data.get('refresh_new')
+        if not refresh_new:
+            log_list = list(log.LOG_QUEUE)
+        elif log.LOG_INDEX:
             if log.LOG_INDEX > len(list(log.LOG_QUEUE)):
-                text = "<br/>".join(list(log.LOG_QUEUE))
+                log_list = list(log.LOG_QUEUE)
             else:
-                text = "<br/>".join(list(log.LOG_QUEUE)[-log.LOG_INDEX:])
-            log.LOG_INDEX = 0
-            return {"text": text + "<br/>"}
-        return {"text": ""}
+                log_list = list(log.LOG_QUEUE)[-log.LOG_INDEX:]
+        log.LOG_INDEX = 0
+        return {"loglist": log_list}
 
-    def __version(self, data):
+    @staticmethod
+    def __version(data):
         """
         检查新版本
         """
         try:
-            response = RequestUtils(proxies=CONFIG.get_proxies()).get_res(
+            response = RequestUtils(proxies=Config().get_proxies()).get_res(
                 "https://api.github.com/repos/jxxghp/nas-tools/releases/latest")
             if response:
                 ver_json = response.json()
@@ -851,7 +873,7 @@ class WebAction:
                 info = f'<a href="{ver_json["html_url"]}" target="_blank">{version}</a>'
                 return {"code": 0, "version": version, "info": info}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
         return {"code": -1, "version": "", "info": ""}
 
     def __update_site(self, data):
@@ -984,7 +1006,7 @@ class WebAction:
         重启
         """
         # 退出主进程
-        self.shutdown_server()
+        self.restart_server()
         return {"code": 0}
 
     def __update_system(self, data):
@@ -992,18 +1014,18 @@ class WebAction:
         更新
         """
         # 升级
-        if "synology" in SystemUtils.execute('uname -a'):
+        if SystemUtils.is_synology():
             if SystemUtils.execute('/bin/ps -w -x | grep -v grep | grep -w "nastool update" | wc -l') == '0':
                 # 调用群晖套件内置命令升级
                 os.system('nastool update')
-                # 退出主进程
-                self.shutdown_server()
+                # 重启
+                self.restart_server()
         else:
             # 清除git代理
             os.system("git config --global --unset http.proxy")
             os.system("git config --global --unset https.proxy")
             # 设置git代理
-            proxy = CONFIG.get_proxies() or {}
+            proxy = Config().get_proxies() or {}
             http_proxy = proxy.get("http")
             https_proxy = proxy.get("https")
             if http_proxy or https_proxy:
@@ -1017,8 +1039,8 @@ class WebAction:
             os.system("git submodule update --init --recursive")
             # 安装依赖
             os.system('pip install -r /nas-tools/requirements.txt')
-            # 退出主进程
-            self.shutdown_server()
+            # 重启
+            self.restart_server()
         return {"code": 0}
 
     @staticmethod
@@ -1033,18 +1055,10 @@ class WebAction:
         """
         更新配置信息
         """
-        cfg = CONFIG.get_config()
+        cfg = Config().get_config()
         cfgs = dict(data).items()
-        # 重载配置标志
+        # 仅测试不保存
         config_test = False
-        scheduler_reload = False
-        emby_reload = False
-        jellyfin_reload = False
-        plex_reload = False
-        category_reload = False
-        subtitle_reload = False
-        sites_reload = False
-        downloader_reload = False
         # 修改配置
         for key, value in cfgs:
             if key == "test" and value:
@@ -1052,54 +1066,10 @@ class WebAction:
                 continue
             # 生效配置
             cfg = self.set_config_value(cfg, key, value)
-            if key in ['douban.interval',
-                       'media.mediasync_interval',
-                       'pt.pt_check_interval',
-                       'pt.ptsignin_cron',
-                       'pt.search_rss_interval']:
-                scheduler_reload = True
-            if key.startswith("emby."):
-                emby_reload = True
-            if key.startswith("jellyfin."):
-                jellyfin_reload = True
-            if key.startswith("plex."):
-                plex_reload = True
-            if key.startswith("media.category"):
-                category_reload = True
-            if key.startswith("subtitle."):
-                subtitle_reload = True
-            if key.startswith('pt.') \
-                    or key in ["downloaddir."]:
-                downloader_reload = True
 
         # 保存配置
         if not config_test:
-            CONFIG.save_config(cfg)
-        # 重启定时服务
-        if scheduler_reload:
-            Scheduler().init_config()
-            restart_scheduler()
-        # 重载emby
-        if emby_reload:
-            Emby().init_config()
-        # 重载Jellyfin
-        if jellyfin_reload:
-            Jellyfin().init_config()
-        # 重载Plex
-        if plex_reload:
-            Plex().init_config()
-        # 重载二级分类
-        if category_reload:
-            Category().init_config()
-        # 重载字幕
-        if subtitle_reload:
-            Subtitle().init_config()
-        # 重载站点
-        if sites_reload:
-            Sites().init_config()
-        # 重载下载器
-        if downloader_reload:
-            Downloader().init_config()
+            Config().save_config(cfg)
 
         return {"code": 0}
 
@@ -1168,7 +1138,7 @@ class WebAction:
                         'enabled': sync_item.ENABLED}
             return {"code": 0, "data": syncpath}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": "查询识别词失败"}
 
     def __delete_sync_path(self, data):
@@ -1481,7 +1451,8 @@ class WebAction:
             "seasons": seasons
         }
 
-    def __test_connection(self, data):
+    @staticmethod
+    def __test_connection(data):
         """
         测试连通性
         """
@@ -1490,6 +1461,7 @@ class WebAction:
         ret = None
         if command:
             try:
+                module_obj = None
                 if isinstance(command, list):
                     for cmd_str in command:
                         ret = eval(cmd_str)
@@ -1499,14 +1471,20 @@ class WebAction:
                     if command.find("|") != -1:
                         module = command.split("|")[0]
                         class_name = command.split("|")[1]
-                        ret = getattr(importlib.import_module(module), class_name)().get_status()
+                        module_obj = getattr(importlib.import_module(module), class_name)()
+                        if hasattr(module_obj, "init_config"):
+                            module_obj.init_config()
+                        ret = module_obj.get_status()
                     else:
                         ret = eval(command)
                 # 重载配置
-                CONFIG.init_config()
+                Config().init_config()
+                if module_obj:
+                    if hasattr(module_obj, "init_config"):
+                        module_obj.init_config()
             except Exception as e:
                 ret = None
-                print(str(e))
+                ExceptionUtils.exception_traceback(e)
             return {"code": 0 if ret else 1}
         return {"code": 0}
 
@@ -1852,7 +1830,6 @@ class WebAction:
         if not brushtask:
             return {"code": 1, "task": {}}
         site_info = Sites().get_sites(siteid=brushtask.SITE)
-        scheme, netloc = StringUtils.get_url_netloc(site_info.get("signurl") or site_info.get("rssurl"))
         sendmessage_switch = DictHelper().get(SystemDictType.BrushMessageSwitch.value, brushtask.SITE)
         forceupload_switch = DictHelper().get(SystemDictType.BrushForceUpSwitch.value, brushtask.SITE)
         task = {
@@ -1872,7 +1849,7 @@ class WebAction:
             "download_size": StringUtils.str_filesize(brushtask.DOWNLOAD_SIZE),
             "upload_size": StringUtils.str_filesize(brushtask.UPLOAD_SIZE),
             "lst_mod_date": brushtask.LST_MOD_DATE,
-            "site_url": "%s://%s" % (scheme, netloc),
+            "site_url": StringUtils.get_base_url(site_info.get("signurl") or site_info.get("rssurl")),
             "sendmessage": sendmessage_switch,
             "forceupload": forceupload_switch
         }
@@ -1965,6 +1942,7 @@ class WebAction:
             "tmdb_S_E_link": tmdb_S_E_link,
             "category": media_info.category,
             "restype": media_info.resource_type,
+            "effect": media_info.resource_effect,
             "pix": media_info.resource_pix,
             "team": media_info.resource_team,
             "video_codec": media_info.video_encode,
@@ -2008,7 +1986,7 @@ class WebAction:
                 or target.find("telegram") != -1 \
                 or target.find("fanart") != -1 \
                 or target.find("tmdb") != -1:
-            res = RequestUtils(proxies=CONFIG.get_proxies(), timeout=5).get_res(target)
+            res = RequestUtils(proxies=Config().get_proxies(), timeout=5).get_res(target)
         else:
             res = RequestUtils(timeout=5).get_res(target)
         seconds = int((datetime.datetime.now() - start_time).microseconds / 1000)
@@ -2095,7 +2073,7 @@ class WebAction:
             try:
                 self.dbhelper.delete_filtergroup(groupid)
             except Exception as err:
-                print(err)
+                ExceptionUtils.exception_traceback(err)
             for init_rulegroup in init_rulegroups:
                 if str(init_rulegroup.get("id")) == groupid:
                     for sql in init_rulegroup.get("sql"):
@@ -2247,6 +2225,12 @@ class WebAction:
                 # 替换图片分辨率
                 image = image.replace("s_ratio_poster", "m_ratio_poster")
             vote = res.get('vote_average')
+            if vote:
+                try:
+                    vote = str(round(float(vote), 1))
+                except Exception as err:
+                    print(str(err))
+
             overview = res.get('overview')
             item = {'id': rid,
                     'orgid': orgid,
@@ -2300,13 +2284,15 @@ class WebAction:
             rule_htmls.append('<span class="badge badge-outline text-blue me-1 mb-1" title="下载限速">下载限速: %sB/s</span>'
                               % StringUtils.str_filesize(int(rules.get("downspeed")) * 1024))
         if rules.get("include"):
-            rule_htmls.append('<span class="badge badge-outline text-green me-1 mb-1 text-wrap text-start" title="包含规则">包含: %s</span>'
-                              % rules.get("include"))
+            rule_htmls.append(
+                '<span class="badge badge-outline text-green me-1 mb-1 text-wrap text-start" title="包含规则">包含: %s</span>'
+                % rules.get("include"))
         if rules.get("hr"):
             rule_htmls.append('<span class="badge badge-outline text-red me-1 mb-1" title="排除HR">排除: HR</span>')
         if rules.get("exclude"):
-            rule_htmls.append('<span class="badge badge-outline text-red me-1 mb-1 text-wrap text-start" title="排除规则">排除: %s</span>'
-                              % rules.get("exclude"))
+            rule_htmls.append(
+                '<span class="badge badge-outline text-red me-1 mb-1 text-wrap text-start" title="排除规则">排除: %s</span>'
+                % rules.get("exclude"))
         if rules.get("dlcount"):
             rule_htmls.append('<span class="badge badge-outline text-blue me-1 mb-1" title="同时下载数量限制">同时下载: %s</span>'
                               % rules.get("dlcount"))
@@ -2323,7 +2309,7 @@ class WebAction:
                     # 兼容性代码
                     peer_counts = ["lt", int(rules.get("peercount"))]
                 except Exception as err:
-                    print(err)
+                    ExceptionUtils.exception_traceback(err)
                     pass
             if peer_counts:
                 rule_htmls.append(
@@ -2375,6 +2361,7 @@ class WebAction:
             MetaHelper().clear_meta_data()
             os.remove(MetaHelper().get_meta_data_path())
         except Exception as e:
+            ExceptionUtils.exception_traceback(e)
             return {"code": 0, "msg": str(e)}
         return {"code": 0}
 
@@ -2411,12 +2398,13 @@ class WebAction:
         """
         filename = data.get("file_name")
         if filename:
-            config_path = CONFIG.get_config_path()
+            config_path = Config().get_config_path()
             file_path = os.path.join(config_path, filename)
             try:
                 shutil.unpack_archive(file_path, config_path, format='zip')
                 return {"code": 0, "msg": ""}
             except Exception as e:
+                ExceptionUtils.exception_traceback(e)
                 return {"code": 1, "msg": str(e)}
             finally:
                 if os.path.exists(file_path):
@@ -2547,7 +2535,9 @@ class WebAction:
 
     @staticmethod
     def __list_site_resources(data):
-        resources = BuiltinIndexer().list(data.get("id"), data.get("page"), data.get("keyword"))
+        resources = Indexer().list_builtin_resources(index_id=data.get("id"),
+                                                     page=data.get("page"),
+                                                     keyword=data.get("keyword"))
         if not resources:
             return {"code": 1, "msg": "获取站点资源出现错误，无法连接到站点！"}
         else:
@@ -2645,7 +2635,7 @@ class WebAction:
             else:
                 return {"code": 1, "msg": "无法识别媒体类型"}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     def __delete_custom_word_group(self, data):
@@ -2655,7 +2645,7 @@ class WebAction:
             WordsHelper().init_config()
             return {"code": 0, "msg": ""}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     def __add_or_edit_custom_word(self, data):
@@ -2759,7 +2749,7 @@ class WebAction:
             else:
                 return {"code": 1, "msg": ""}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     def __get_custom_word(self, data):
@@ -2784,7 +2774,7 @@ class WebAction:
                 word = {}
             return {"code": 0, "data": word}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": "查询识别词失败"}
 
     def __delete_custom_word(self, data):
@@ -2794,6 +2784,7 @@ class WebAction:
             WordsHelper().init_config()
             return {"code": 0, "msg": ""}
         except Exception as e:
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     def __check_custom_words(self, data):
@@ -2807,7 +2798,7 @@ class WebAction:
             WordsHelper().init_config()
             return {"code": 0, "msg": ""}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": "识别词状态设置失败"}
 
     def __export_custom_words(self, data):
@@ -2856,7 +2847,7 @@ class WebAction:
             string = base64.b64encode(export_string.encode("utf-8")).decode('utf-8')
             return {"code": 0, "string": string}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     @staticmethod
@@ -2887,7 +2878,7 @@ class WebAction:
                                "words": words})
             return {"code": 0, "groups": groups, "note_string": note_string}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     def __import_custom_words(self, data):
@@ -2954,7 +2945,7 @@ class WebAction:
             WordsHelper().init_config()
             return {"code": 0, "msg": ""}
         except Exception as e:
-            print(str(e))
+            ExceptionUtils.exception_traceback(e)
             return {"code": 1, "msg": str(e)}
 
     @staticmethod
@@ -3047,6 +3038,7 @@ class WebAction:
                 Filter().init_config()
             return {"code": 0, "msg": ""}
         except Exception as err:
+            ExceptionUtils.exception_traceback(err)
             return {"code": 1, "msg": "数据格式不正确，%s" % str(err)}
 
     @staticmethod
@@ -3057,7 +3049,7 @@ class WebAction:
         # 磁盘空间
         UsedPercent = 0
         TotalSpaceList = []
-        media = CONFIG.get_config('media')
+        media = Config().get_config('media')
         if media:
             # 电影目录
             movie_paths = media.get('movie_path')
@@ -3198,46 +3190,186 @@ class WebAction:
         """
         查询所有搜索结果
         """
-        SearchResults = []
+        SearchResults = {}
         res = self.dbhelper.get_search_results()
+        total = len(res)
         for item in res:
-            # 是否已存在
-            if item.TMDBID:
-                exist_flag = MediaServer().check_item_exists(title=item.TITLE, year=item.YEAR, tmdbid=item.TMDBID)
+            # 质量(来源、效果)、分辨率
+            if item.RES_TYPE:
+                try:
+                    res_mix = json.loads(item.RES_TYPE)
+                except Exception as err:
+                    ExceptionUtils.exception_traceback(err)
+                    continue
+                respix = res_mix.get("respix") or ""
+                video_encode = res_mix.get("video_encode") or ""
+                restype = res_mix.get("restype") or ""
+                reseffect = res_mix.get("reseffect") or ""
             else:
-                exist_flag = False
+                restype = ""
+                respix = ""
+                reseffect = ""
+                video_encode = ""
+            # 分组标识 (来源，分辨率)
+            group_key = re.sub(r"[-.\s@|]", "", f"{respix}_{restype}").lower()
+            # 分组信息
+            group_info = {
+                "respix": respix,
+                "restype": restype,
+            }
+            # 种子唯一标识 （大小，质量(来源、效果)，制作组组成）
+            unique_key = re.sub(r"[-.\s@|]", "",
+                                f"{respix}_{restype}_{video_encode}_{reseffect}_{item.SIZE}_{item.OTHERINFO}").lower()
+            # 标识信息
+            unique_info = {
+                "video_encode": video_encode,
+                "size": item.SIZE,
+                "reseffect": reseffect,
+                "releasegroup": item.OTHERINFO
+            }
             # 结果
             title_string = f"{item.TITLE}"
             if item.YEAR:
                 title_string = f"{title_string} ({item.YEAR})"
-            if item.ES_STRING:
-                title_string = f"{title_string} {item.ES_STRING}"
-            SearchResults.append({
+            # 电视剧季集标识
+            mtype = item.TYPE or ""
+            SE_key = item.ES_STRING or "TV" if mtype != "MOV" else "MOV"
+            media_type = {"MOV": "电影", "TV": "电视剧", "ANI": "动漫"}.get(mtype)
+            # 种子信息
+            torrent_item = {
                 "id": item.ID,
-                "title_string": title_string,
-                "restype": item.RES_TYPE,
-                "size": item.SIZE,
                 "seeders": item.SEEDERS,
                 "enclosure": item.ENCLOSURE,
                 "site": item.SITE,
-                "year": item.YEAR,
-                "es_string": item.ES_STRING,
-                "image": item.IMAGE,
-                "type": item.TYPE,
-                "vote": item.VOTE,
                 "torrent_name": item.TORRENT_NAME,
                 "description": item.DESCRIPTION,
-                "tmdbid": item.TMDBID,
-                "poster": item.IMAGE,
-                "overview": item.OVERVIEW,
                 "pageurl": item.PAGEURL,
-                "releasegroup": item.OTHERINFO,
                 "uploadvalue": item.UPLOAD_VOLUME_FACTOR,
                 "downloadvalue": item.DOWNLOAD_VOLUME_FACTOR,
-                "title": item.TITLE,
-                "exist": exist_flag
-            })
-        return {"code": 0, "result": SearchResults}
+                "size": item.SIZE,
+                "respix": respix,
+                "restype": restype,
+                "reseffect": reseffect,
+                "releasegroup": item.OTHERINFO,
+                "video_encode": video_encode
+            }
+            # 促销
+            free_item = {
+                "value": f"{item.UPLOAD_VOLUME_FACTOR} {item.DOWNLOAD_VOLUME_FACTOR}",
+                "name": MetaBase.get_free_string(item.UPLOAD_VOLUME_FACTOR, item.DOWNLOAD_VOLUME_FACTOR)
+            }
+            # 季
+            filter_season = SE_key.split()[0] if SE_key and SE_key not in ["MOV", "TV"] else None
+            # 合并搜索结果
+            if SearchResults.get(title_string):
+                # 种子列表
+                result_item = SearchResults[title_string]
+                torrent_dict = SearchResults[title_string].get("torrent_dict")
+                SE_dict = torrent_dict.get(SE_key)
+                if SE_dict:
+                    group = SE_dict.get(group_key)
+                    if group:
+                        unique = group.get("group_torrents").get(unique_key)
+                        if unique:
+                            unique["torrent_list"].append(torrent_item)
+                            group["group_total"] += 1
+                        else:
+                            group["group_total"] += 1
+                            group.get("group_torrents")[unique_key] = {
+                                "unique_info": unique_info,
+                                "torrent_list": [torrent_item]
+                            }
+                    else:
+                        SE_dict[group_key] = {
+                            "group_info": group_info,
+                            "group_total": 1,
+                            "group_torrents": {
+                                unique_key: {
+                                    "unique_info": unique_info,
+                                    "torrent_list": [torrent_item]
+                                }
+                            }
+                        }
+                else:
+                    torrent_dict[SE_key] = {
+                        group_key: {
+                            "group_info": group_info,
+                            "group_total": 1,
+                            "group_torrents": {
+                                unique_key: {
+                                    "unique_info": unique_info,
+                                    "torrent_list": [torrent_item]
+                                }
+                            }
+                        }
+                    }
+                # 过滤条件
+                torrent_filter = dict(result_item.get("filter"))
+                if free_item not in torrent_filter.get("free"):
+                    torrent_filter["free"].append(free_item)
+                if item.SITE not in torrent_filter.get("site"):
+                    torrent_filter["site"].append(item.SITE)
+                if video_encode \
+                        and video_encode not in torrent_filter.get("video"):
+                    torrent_filter["video"].append(video_encode)
+                if filter_season \
+                        and filter_season not in torrent_filter.get("season"):
+                    torrent_filter["season"].append(filter_season)
+            else:
+                # 是否已存在
+                if item.TMDBID:
+                    exist_flag = MediaServer().check_item_exists(title=item.TITLE, year=item.YEAR, tmdbid=item.TMDBID)
+                else:
+                    exist_flag = False
+                SearchResults[title_string] = {
+                    "key": item.ID,
+                    "title": item.TITLE,
+                    "year": item.YEAR,
+                    "type_key": mtype,
+                    "image": item.IMAGE,
+                    "type": media_type,
+                    "vote": item.VOTE,
+                    "tmdbid": item.TMDBID,
+                    "backdrop": item.IMAGE,
+                    "poster": item.POSTER,
+                    "overview": item.OVERVIEW,
+                    "exist": exist_flag,
+                    "torrent_dict": {
+                        SE_key: {
+                            group_key: {
+                                "group_info": group_info,
+                                "group_total": 1,
+                                "group_torrents": {
+                                    unique_key: {
+                                        "unique_info": unique_info,
+                                        "torrent_list": [torrent_item]
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "filter": {
+                        "site": [item.SITE],
+                        "free": [free_item],
+                        "video": [video_encode] if video_encode else [],
+                        "season": [filter_season] if filter_season else []
+                    }
+                }
+
+        # 提升整季的顺序到顶层
+        def se_sort(k):
+            k = re.sub(r" +|(?<=s\d)\D*?(?=e)|(?<=s\d\d)\D*?(?=e)", " ", k[0], flags=re.I).split()
+            return (k[0], k[1]) if len(k) > 1 else ("Z" + k[0], "ZZZ")
+
+        # 开始排序季集顺序
+        for title, item in SearchResults.items():
+            # 排序筛选器 季
+            item["filter"]["season"].sort(reverse=True)
+            # 排序种子列 集
+            item["torrent_dict"] = sorted(item["torrent_dict"].items(),
+                                          key=se_sort,
+                                          reverse=True)
+        return {"code": 0, "total": total, "result": SearchResults}
 
     @staticmethod
     def search_media_infos(data):
@@ -3249,7 +3381,7 @@ class WebAction:
         if not SearchWord:
             return []
         _mediaserver = MediaServer()
-        use_douban_titles = CONFIG.get_config("laboratory").get("use_douban_titles")
+        use_douban_titles = Config().get_config("laboratory").get("use_douban_titles")
         if use_douban_titles:
             _, key_word, season_num, episode_num, _, _ = StringUtils.get_keyword_from_string(SearchWord)
             medias = DouBan().search_douban_medias(keyword=key_word,
@@ -3272,10 +3404,9 @@ class WebAction:
                     tmp_info.title = "%s 第%s季" % (tmp_info.title, cn2an.an2cn(meta_info.begin_season, mode='low'))
                 if tmp_info.begin_episode:
                     tmp_info.title = "%s 第%s集" % (tmp_info.title, meta_info.begin_episode)
-                tmp_info.poster_path = TMDB_IMAGE_W500_URL % tmp_info.poster_path
-                medias.append(tmp_info.__dict__)
+                medias.append(tmp_info)
 
-        return {"code": 0, "result": medias}
+        return {"code": 0, "result": [media.to_dict() for media in medias]}
 
     @staticmethod
     def get_movie_rss_list(data=None):
@@ -3337,7 +3468,10 @@ class WebAction:
             elif Client == DownloaderType.Aria2:
                 name = torrent.get('bittorrent', {}).get('info', {}).get("name")
                 # 进度
-                progress = round(int(torrent.get('completedLength')) / int(torrent.get("totalLength")), 1) * 100
+                try:
+                    progress = round(int(torrent.get('completedLength')) / int(torrent.get("totalLength")), 1) * 100
+                except ZeroDivisionError:
+                    progress = 0.0
                 state = "Downloading"
                 dlspeed = StringUtils.str_filesize(torrent.get('downloadSpeed'))
                 upspeed = StringUtils.str_filesize(torrent.get('uploadSpeed'))
@@ -3516,7 +3650,7 @@ class WebAction:
         查询所有过滤规则
         """
         RuleGroups = Filter().get_rule_infos()
-        sql_file = os.path.join(CONFIG.get_root_path(), "config", "init_filter.sql")
+        sql_file = os.path.join(Config().get_root_path(), "config", "init_filter.sql")
         with open(sql_file, "r", encoding="utf-8") as f:
             sql_list = f.read().split(';\n')
             Init_RuleGroups = []
@@ -3550,13 +3684,13 @@ class WebAction:
         """
         维护媒体库目录
         """
-        cfg = self.set_config_directory(CONFIG.get_config(),
+        cfg = self.set_config_directory(Config().get_config(),
                                         data.get("oper"),
                                         data.get("key"),
                                         data.get("value"),
                                         data.get("replace_value"))
         # 保存配置
-        CONFIG.save_config(cfg)
+        Config().save_config(cfg)
         return {"code": 0}
 
     @staticmethod
@@ -3621,6 +3755,7 @@ class WebAction:
                         })
 
         except Exception as e:
+            ExceptionUtils.exception_traceback(e)
             return {
                 "code": -1,
                 "message": '加载路径失败: %s' % str(e)
@@ -3642,6 +3777,7 @@ class WebAction:
             try:
                 os.rename(path, os.path.join(os.path.dirname(path), name))
             except Exception as e:
+                ExceptionUtils.exception_traceback(e)
                 return {"code": -1, "msg": str(e)}
         return {"code": 0}
 
@@ -3680,6 +3816,7 @@ class WebAction:
                         and not PathUtils.get_dir_files(media_path, exts=RMT_MEDIAEXT):
                     shutil.rmtree(media_path)
             except Exception as e:
+                ExceptionUtils.exception_traceback(e)
                 return {"code": -1, "msg": str(e)}
         return {"code": 0}
 
@@ -3791,11 +3928,12 @@ class WebAction:
         """
         flag = data.get("flag")
         cid = data.get("cid")
+        ctype = data.get("type")
         checked = data.get("checked")
         if flag == "interactive":
-            # 最多开启一个交互
+            # TG/WX只能开启一个交互
             if checked:
-                self.dbhelper.check_message_client(interactive=0)
+                self.dbhelper.check_message_client(interactive=0, ctype=ctype)
             self.dbhelper.check_message_client(cid=cid,
                                                interactive=1 if checked else 0)
             Message().init_config()
@@ -3837,7 +3975,7 @@ class WebAction:
         indexers = [{
             "id": index.id,
             "name": index.name
-        } for index in Searcher().indexer.get_indexers()]
+        } for index in Indexer().get_indexers()]
         return {"code": 0, "indexers": indexers}
 
     @staticmethod
@@ -3867,6 +4005,121 @@ class WebAction:
                 for file in files:
                     hardlinks[os.path.basename(file)] = SystemUtils().find_hardlinks(file=file, fdir=file_dir)
             except Exception as e:
-                print(str(e))
+                ExceptionUtils.exception_traceback(e)
                 return {"code": 1}
         return {"code": 0, "data": hardlinks}
+
+    @staticmethod
+    def __update_sites_cookie_ua(data):
+        """
+        更新所有站点的Cookie和UA
+        """
+        siteid = data.get("siteid")
+        username = data.get("username")
+        password = data.get("password")
+        twostepcode = data.get("two_step_code")
+        ocrflag = data.get("ocrflag")
+        retcode, messages = SiteCookie().update_sites_cookie_ua(siteid=siteid,
+                                                                username=username,
+                                                                password=password,
+                                                                twostepcode=twostepcode,
+                                                                ocrflag=ocrflag)
+        if retcode == 0:
+            Sites().init_config()
+        return {"code": retcode, "messages": messages}
+
+    @staticmethod
+    def __set_site_captcha_code(data):
+        """
+        设置站点验证码
+        """
+        code = data.get("code")
+        value = data.get("value")
+        SiteCookie().set_code(code=code, value=value)
+        return {"code": 0}
+
+    @staticmethod
+    def __update_torrent_remove_task(data):
+        """
+        更新自动删种任务
+        """
+        flag, msg = TorrentRemover().update_torrent_remove_task(data=data)
+        if not flag:
+            return {"code": 1, "msg": msg}
+        else:
+            TorrentRemover().init_config()
+            return {"code": 0}
+
+    @staticmethod
+    def __get_torrent_remove_task(data=None):
+        """
+        获取自动删种任务
+        """
+        if data:
+            tid = data.get("tid")
+        else:
+            tid = None
+        return {"code": 0, "detail": TorrentRemover().get_torrent_remove_tasks(taskid=tid)}
+
+    @staticmethod
+    def __delete_torrent_remove_task(data):
+        """
+        删除自动删种任务
+        """
+        tid = data.get("tid")
+        flag = TorrentRemover().delete_torrent_remove_task(taskid=tid)
+        if flag:
+            TorrentRemover().init_config()
+            return {"code": 0}
+        else:
+            return {"code": 1}
+
+    @staticmethod
+    def __get_remove_torrents(data):
+        """
+        获取满足自动删种任务的种子
+        """
+        tid = data.get("tid")
+        flag, torrents = TorrentRemover().get_remove_torrents(taskid=tid)
+        if not flag or not torrents:
+            return {"code": 1, "msg": "未获取到符合处理条件种子"}
+        return {"code": 0, "data": torrents}
+
+    @staticmethod
+    def __auto_remove_torrents(data):
+        """
+        执行自动删种任务
+        """
+        tid = data.get("tid")
+        TorrentRemover().auto_remove_torrents(taskids=tid)
+        return {"code": 0}
+
+    @staticmethod
+    def md5_hash(data):
+        """
+        MD5 HASH
+        """
+        if not data:
+            return ""
+        return hashlib.md5(str(data).encode()).hexdigest()
+
+    @staticmethod
+    def __get_site_favicon(data):
+        """
+        获取站点图标
+        """
+        sitename = data.get("name")
+        return {"code": 0, "icon": Sites().get_site_favicon(site_name=sitename)}
+
+    def get_douban_history(self, data=None):
+        """
+        查询豆瓣同步历史
+        """
+        return {"code": 0, "result": self.dbhelper.get_douban_history()}
+
+    def __delete_douban_history(self, data):
+        """
+        删除豆瓣同步历史
+        """
+        self.dbhelper.delete_douban_history(data.get("id"))
+        return {"code": 0}

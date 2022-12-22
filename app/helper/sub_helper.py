@@ -5,7 +5,7 @@ from pyquery import PyQuery
 
 import log
 from app.helper import ChromeHelper, CHROME_LOCK
-from config import CONFIG
+from config import Config
 
 
 class SubHelper:
@@ -15,7 +15,7 @@ class SubHelper:
     _url_keyword = "https://www.opensubtitles.org/zh/search/moviename-%s/sublanguageid-chi"
 
     def __init__(self):
-        self._ua = CONFIG.get_ua()
+        self._ua = Config().get_ua()
 
     def search_subtitles(self, query):
         if query.get("imdbid"):
@@ -41,7 +41,6 @@ class SubHelper:
         """
         搜索并解析结果
         """
-        # 检测环境，有浏览器内核的优先使用仿真签到
         chrome = ChromeHelper()
         if not chrome.get_status():
             log.error("【Subtitle】未找到浏览器内核，当前环境无法检索opensubtitles字幕！")

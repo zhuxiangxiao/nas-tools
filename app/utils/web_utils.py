@@ -1,5 +1,6 @@
 import os
-from app.utils import RequestUtils
+from app.utils import RequestUtils, SystemUtils
+from app.utils.exception_utils import ExceptionUtils
 from version import APP_VERSION
 
 
@@ -21,7 +22,7 @@ class WebUtils:
             c2 = c1.split('","')[0]
             return c2
         except Exception as err:
-            print(str(err))
+            ExceptionUtils.exception_traceback(err)
             return ""
 
     @staticmethod
@@ -29,5 +30,5 @@ class WebUtils:
         """
         获取当前版本号
         """
-        commit_id = os.popen('git rev-parse --short HEAD').readline().strip()
+        commit_id = SystemUtils.execute('git rev-parse --short HEAD')
         return "%s %s" % (APP_VERSION, commit_id)

@@ -1,15 +1,16 @@
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import IndexerType
-from config import CONFIG
-from app.indexer.indexer import IIndexer
+from config import Config
+from app.indexer.index_client import IIndexClient
 from app.utils import RequestUtils
 from app.helper import IndexerConf
 
 
-class Prowlarr(IIndexer):
+class Prowlarr(IIndexClient):
     index_type = IndexerType.PROWLARR.value
 
     def init_config(self):
-        prowlarr = CONFIG.get_config('prowlarr')
+        prowlarr = Config().get_config('prowlarr')
         if prowlarr:
             self.api_key = prowlarr.get('api_key')
             self.host = prowlarr.get('host')
@@ -37,7 +38,7 @@ class Prowlarr(IIndexer):
         try:
             ret = RequestUtils().get_res(indexer_query_url)
         except Exception as e2:
-            print(str(e2))
+            ExceptionUtils.exception_traceback(e2)
             return []
         if not ret:
             return []
@@ -45,7 +46,7 @@ class Prowlarr(IIndexer):
         return [IndexerConf({"id": v["indexerId"],
                              "name": v["indexerName"],
                              "domain": f'{self.host}{v["indexerId"]}/api',
-                             "buildin": False})
+                             "builtin": False})
                 for v in indexers]
 
     def search(self, *kwargs):

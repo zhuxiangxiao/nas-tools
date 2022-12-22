@@ -11,8 +11,9 @@ from app.media.douban import DouBan
 from app.message import Message
 from app.searcher import Searcher
 from app.subscribe import Subscribe
+from app.utils.exception_utils import ExceptionUtils
 from app.utils.types import SearchType, MediaType
-from config import CONFIG
+from config import Config
 
 lock = Lock()
 
@@ -42,7 +43,7 @@ class DoubanSync:
         self.init_config()
 
     def init_config(self):
-        douban = CONFIG.get_config('douban')
+        douban = Config().get_config('douban')
         if douban:
             # 同步间隔
             self._interval = int(douban.get('interval')) if str(douban.get('interval')).isdigit() else None
@@ -177,8 +178,6 @@ class DoubanSync:
         media_list = []
         # 豆瓣ID列表
         douban_ids = {}
-        # 开始序号
-        start_number = 0
         # 每页条数
         perpage_number = 15
         # 每一个用户
@@ -196,6 +195,8 @@ class DoubanSync:
                 if not mtype:
                     continue
                 log.info(f"【Douban】开始获取 {user_name or user} 的 {mtype} 数据...")
+                # 开始序号
+                start_number = 0
                 # 类型成功数量
                 user_type_succnum = 0
                 # 每一页
@@ -236,6 +237,7 @@ class DoubanSync:
                                 user_succnum += 1
                         log.debug(f"【Douban】{user_name or user} 第 {page_number} 页解析完成，共获取到 {sucess_urlnum} 个媒体")
                     except Exception as err:
+                        ExceptionUtils.exception_traceback(err)
                         log.error(f"【Douban】{user_name or user} 第 {page_number} 页解析出错：%s" % str(err))
                         break
                     # 继续下一页

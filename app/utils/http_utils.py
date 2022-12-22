@@ -1,7 +1,7 @@
 import requests
 import urllib3
 from urllib3.exceptions import InsecureRequestWarning
-from config import CONFIG
+from config import Config
 
 urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -19,19 +19,22 @@ class RequestUtils:
                  proxies=False,
                  session=None,
                  timeout=None,
-                 referer=None):
+                 referer=None,
+                 content_type=None):
+        if not content_type:
+            content_type = "application/x-www-form-urlencoded; charset=UTF-8"
         if headers:
             if isinstance(headers, str):
                 self._headers = {
-                    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    "Content-Type": content_type,
                     "User-Agent": f"{headers}"
                 }
             else:
                 self._headers = headers
         else:
             self._headers = {
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "User-Agent": CONFIG.get_ua()
+                "Content-Type": content_type,
+                "User-Agent": Config().get_ua()
             }
         if referer:
             self._headers.update({
@@ -115,7 +118,7 @@ class RequestUtils:
         except requests.exceptions.RequestException:
             return None
 
-    def post_res(self, url, params=None, allow_redirects=True, files=None):
+    def post_res(self, url, params=None, allow_redirects=True, files=None, json=None):
         try:
             if self._session:
                 return self._session.post(url,
@@ -126,7 +129,8 @@ class RequestUtils:
                                           cookies=self._cookies,
                                           timeout=self._timeout,
                                           allow_redirects=allow_redirects,
-                                          files=files)
+                                          files=files,
+                                          json=json)
             else:
                 return requests.post(url,
                                      data=params,
@@ -136,7 +140,8 @@ class RequestUtils:
                                      cookies=self._cookies,
                                      timeout=self._timeout,
                                      allow_redirects=allow_redirects,
-                                     files=files)
+                                     files=files,
+                                     json=json)
         except requests.exceptions.RequestException:
             return None
 

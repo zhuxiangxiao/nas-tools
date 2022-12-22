@@ -4,19 +4,19 @@ import re
 import traceback
 from urllib.parse import quote
 
-from requests.utils import dict_from_cookiejar
-
-import feapder
-from app.utils import RequestUtils, StringUtils, SystemUtils
-from config import CONFIG, DEFAULT_UA
-from feapder.utils.tools import urlencode
 from jinja2 import Template
 from pyquery import PyQuery
 
+import feapder
 import log
+from app.utils import StringUtils, SystemUtils
+from app.utils.exception_utils import ExceptionUtils
+from config import Config, DEFAULT_UA, WEBDRIVER_PATH
+from feapder.utils.tools import urlencode
 
 
 class TorrentSpider(feapder.AirSpider):
+    _webdriver_path = WEBDRIVER_PATH.get(SystemUtils.get_system().value)
     __custom_setting__ = dict(
         USE_SESSION=True,
         SPIDER_THREAD_COUNT=1,
@@ -33,7 +33,7 @@ class TorrentSpider(feapder.AirSpider):
             driver_type="CHROME",
             timeout=15,
             window_size=(1024, 800),
-            executable_path="/usr/lib/chromium/chromedriver" if SystemUtils.is_docker() else None,
+            executable_path=_webdriver_path,
             render_time=5,
             custom_argument=["--ignore-certificate-errors"],
         )
@@ -41,18 +41,20 @@ class TorrentSpider(feapder.AirSpider):
     is_complete = False
     indexerid = None
     indexername = None
-    cookies = None
-    headers = None
+    cookie = None
+    ua = None
     proxies = None
     render = False
     keyword = None
     indexer = None
     search = None
+    index = None
     domain = None
     torrents = None
     article_list = None
     fields = None
     page = 0
+    result_num = 100
     torrents_info = {}
     torrents_info_array = []
 
@@ -63,6 +65,7 @@ class TorrentSpider(feapder.AirSpider):
         self.indexerid = indexer.id
         self.indexername = indexer.name
         self.search = indexer.search
+        self.index = indexer.index
         self.torrents = indexer.torrents
         self.render = indexer.render
         self.domain = indexer.domain
@@ -70,47 +73,76 @@ class TorrentSpider(feapder.AirSpider):
         if self.domain and not str(self.domain).endswith("/"):
             self.domain = self.domain + "/"
         if indexer.ua:
-            self.headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                            "User-Agent": f"{indexer.ua}"}
+            self.ua = indexer.ua
         else:
-            self.headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                            "User-Agent": f"{CONFIG.get_config('app').get('user_agent') or DEFAULT_UA}"}
-        if indexer.proxy and CONFIG.get_proxies():
-            self.proxies = CONFIG.get_proxies()
-            self.__custom_setting__['WEBDRIVER']['proxy'] = self.proxies.get("http") or None
-        else:
-            self.proxies = None
-            self.__custom_setting__['WEBDRIVER']['proxy'] = None
+            self.ua = Config().get_config('app').get('user_agent') or DEFAULT_UA
+        if indexer.proxy:
+            self.proxies = Config().get_proxies()
         if indexer.cookie:
-            self.cookies = indexer.cookie
-        else:
-            try:
-                res = RequestUtils(headers=self.headers, proxies=self.proxies, timeout=10).get_res(self.domain)
-                if res:
-                    self.cookies = dict_from_cookiejar(res.cookies)
-            except Exception as err:
-                log.warn(f"【Spider】获取 {self.domain} cookie失败：{format(err)}")
+            self.cookie = indexer.cookie
+
+        self.result_num = Config().get_config('pt').get('site_search_result_num') or 100
         self.torrents_info_array = []
 
     def start_requests(self):
         if not self.search or not self.domain:
             self.is_complete = True
             return
+        # 种子路径
         torrentspath = self.search.get('paths', [{}])[0].get('path', '')
-        if self.page:
-            searchurl = self.domain + torrentspath + "?page=%s" % self.page
-        else:
-            searchurl = self.domain + torrentspath + "?page=0"
         if self.keyword:
+            # 关键字搜索
             if torrentspath.find("{keyword}") != -1:
-                searchurl = self.domain + torrentspath.replace("{keyword}", quote(self.keyword))
+                searchurl = self.domain + \
+                            torrentspath.replace("{keyword}", quote(self.keyword))
             else:
-                searchurl = self.domain + torrentspath + '?stypes=s&' + urlencode(
-                    {"search": self.keyword, "search_field": self.keyword, "keyword": self.keyword})
-        yield feapder.Request(searchurl,
-                              cookies=self.cookies,
-                              render=self.render,
-                              headers=self.headers)
+                searchurl = self.domain + \
+                            torrentspath + \
+                            '?stypes=s&' + \
+                            urlencode({
+                                "search": self.keyword,
+                                "search_field": self.keyword,
+                                "keyword": self.keyword
+                            })
+        else:
+            # 列表浏览
+            if self.index:
+                # 有单独浏览路径
+                indexpath = self.index.get("path")
+                indexstart = self.index.get("start") or 0
+                if self.page is not None:
+                    if indexpath.find("{page}") != -1:
+                        searchurl = self.domain + \
+                                    indexpath.replace("{page}", str(int(self.page) + indexstart))
+                    else:
+                        searchurl = self.domain + \
+                                    indexpath + \
+                                    "?page=%s" % (indexstart + int(self.page))
+                else:
+                    searchurl = self.domain + indexpath
+            else:
+                # 复用搜索路径浏览
+                torrentspath = torrentspath.replace("{keyword}", "")
+                if torrentspath.find("{page}") != -1:
+                    searchurl = self.domain + \
+                                torrentspath.replace("{page}", str(self.page or 0))
+                else:
+                    searchurl = self.domain + \
+                                torrentspath + \
+                                "?page=%s" % (self.page or 0)
+
+        yield feapder.Request(url=searchurl,
+                              use_session=True,
+                              render=self.render)
+
+    def download_midware(self, request):
+        request.headers = {
+            "User-Agent": self.ua,
+            "Cookie": self.cookie
+        }
+        if self.proxies:
+            request.proxies = self.proxies
+        return request
 
     def Gettitle_default(self, torrent):
         # title default
@@ -413,6 +445,7 @@ class TorrentSpider(feapder.AirSpider):
             self.Getpubdate(torrent)
             self.Getelapsed_date(torrent)
         except Exception as err:
+            ExceptionUtils.exception_traceback(err)
             log.error("【Spider】%s 检索出现错误：%s" % (self.indexername, str(err)))
         return self.torrents_info
 
@@ -442,7 +475,7 @@ class TorrentSpider(feapder.AirSpider):
                 elif method_name == "appendleft":
                     text = f"{args}{text}"
             except Exception as err:
-                print(str(err))
+                ExceptionUtils.exception_traceback(err)
         return text.strip()
 
     def parse(self, request, response):
@@ -476,10 +509,11 @@ class TorrentSpider(feapder.AirSpider):
             # 遍历种子html列表
             for torn in html_doc(torrents_selector):
                 self.torrents_info_array.append(copy.deepcopy(self.Getinfo(PyQuery(torn))))
-                if len(self.torrents_info_array) >= 100:
+                if len(self.torrents_info_array) >= int(self.result_num):
                     break
 
         except Exception as err:
+            ExceptionUtils.exception_traceback(err)
             log.warn("【Spider】错误：%s - %s" % (str(err), traceback.format_exc()))
         finally:
             self.is_complete = True

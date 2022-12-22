@@ -1,8 +1,9 @@
 import os.path
 import pickle
 
-from app.utils import StringUtils, RequestUtils
-from config import CONFIG
+from app.utils import StringUtils
+from app.utils.exception_utils import ExceptionUtils
+from config import Config
 from app.utils.commons import singleton
 
 
@@ -15,12 +16,12 @@ class IndexerHelper:
 
     def init_config(self):
         try:
-            with open(os.path.join(CONFIG.get_inner_config_path(),
+            with open(os.path.join(Config().get_inner_config_path(),
                                    "sites.dat"),
                       "rb") as f:
                 self._indexers = pickle.load(f)
         except Exception as err:
-            print(err)
+            ExceptionUtils.exception_traceback(err)
 
     def get_all_indexers(self):
         return self._indexers
@@ -34,10 +35,9 @@ class IndexerHelper:
                     proxy=False,
                     parser=None,
                     ua=None,
-                    render=False,
+                    render=None,
                     language=None,
-                    pri=None,
-                    favicon=None):
+                    pri=None):
         if not url:
             return None
         for indexer in self._indexers:
@@ -45,7 +45,7 @@ class IndexerHelper:
                 continue
             if StringUtils.url_equal(indexer.get("domain"), url):
                 return IndexerConf(datas=indexer,
-                                   cookie=RequestUtils.cookie_parse(cookie),
+                                   cookie=cookie,
                                    name=name,
                                    rule=rule,
                                    public=public,
@@ -53,10 +53,9 @@ class IndexerHelper:
                                    parser=parser,
                                    ua=ua,
                                    render=render,
-                                   buildin=True,
+                                   builtin=True,
                                    language=language,
-                                   pri=pri,
-                                   favicon=favicon)
+                                   pri=pri)
         return None
 
 
@@ -71,11 +70,10 @@ class IndexerConf(object):
                  proxy=False,
                  parser=None,
                  ua=None,
-                 render=False,
-                 buildin=True,
+                 render=None,
+                 builtin=True,
                  language=None,
-                 pri=None,
-                 favicon=None):
+                 pri=None):
         if not datas:
             return
         self.datas = datas
@@ -84,6 +82,7 @@ class IndexerConf(object):
         self.domain = self.datas.get('domain')
         self.userinfo = self.datas.get('userinfo', {})
         self.search = self.datas.get('search', {})
+        self.index = self.datas.get('index', {})
         self.torrents = self.datas.get('torrents', {})
         self.category_mappings = self.datas.get('category_mappings', [])
         self.cookie = cookie
@@ -92,11 +91,13 @@ class IndexerConf(object):
         self.proxy = proxy
         self.parser = parser
         self.ua = ua
-        self.render = render
-        self.buildin = buildin
+        if render is not None:
+            self.render = render
+        else:
+            self.render = True if self.datas.get("render") else False
+        self.builtin = builtin
         self.language = language
         self.pri = pri if pri else 0
-        self.favicon = favicon
 
     def get_userinfo(self):
         return self.userinfo
